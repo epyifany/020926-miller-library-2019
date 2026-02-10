@@ -9,73 +9,57 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 ## Phase 0: Environment and Reproducibility Setup
 
 ### Milestone 0.1 — Project structure
-- [ ] Create a clean project layout:
-  ```
-  src/
-    data/           # Data loading and preprocessing
-    models/         # Architecture definitions
-    training/       # Training loops, schedulers, loss
-    evaluation/     # Metrics, statistical tests
-    utils/          # Logging, config, seed management
-  configs/          # YAML/JSON experiment configs
-  scripts/          # Entry-point scripts (train.py, evaluate.py)
-  notebooks/        # Exploratory analysis only
-  results/          # Generated outputs (gitignored)
-  tests/            # Unit tests for data pipeline and metrics
-  ```
-- [ ] Add a `requirements.txt` or `pyproject.toml` with pinned versions (PyTorch, NumPy, SciPy, h5py/mat73, matplotlib, PyYAML, etc.)
-- [ ] Confirm Python version (3.9+ recommended for type hints and match statements)
+- [x] Create a clean project layout (src/data, src/models, src/training, src/evaluation, src/utils, configs/, scripts/, results/, tests/)
+- [x] Add a `requirements.txt` (numpy, scipy, h5py, torch, pyyaml, matplotlib, scikit-learn)
+- [x] Confirm Python version — using Python 3.11 (pytorch_ml env)
 
 ### Milestone 0.2 — Reproducibility infrastructure
-- [ ] Write a `set_seed(seed)` function that sets `random.seed`, `np.random.seed`, `torch.manual_seed`, `torch.cuda.manual_seed_all`, and `torch.backends.cudnn.deterministic = True`
-- [ ] Create a config system (YAML files) so every experiment is fully defined by a config file — no magic numbers in code
-- [ ] Set up experiment logging: save configs, model checkpoints, per-epoch metrics, and final results to `results/{experiment_id}/`
-- [ ] Add a `README` in `results/` explaining the directory structure
-- [ ] Decide on and document hardware: GPU model, CUDA version, PyTorch version
+- [x] Write a `set_seed(seed)` function (`src/utils/seed.py`)
+- [x] Create a config system — YAML-based (`src/utils/config.py`, `configs/fingerflex_default.yaml`)
+- [x] `make_experiment_dir()` saves config + creates timestamped results dirs
+- [ ] Set up per-epoch CSV logging (will implement with training loop in Phase 3)
 
 ### Milestone 0.3 — Version control hygiene
-- [ ] Add `data/`, `results/`, `*.pt`, `*.ckpt`, `wandb/` to `.gitignore`
-- [ ] Make an initial commit with the empty project skeleton
-- [ ] Decide whether to use Weights & Biases, TensorBoard, or plain CSV logging (W&B recommended for experiment tracking at scale, but CSV is fine to start)
+- [x] `.gitignore` covers data/, results/, *.pt, *.ckpt, wandb/, symlinks
+- [x] Data and results symlinked to `/mnt/archive/` (300 GB) — see CLAUDE.md Storage Rules
+- [ ] Make an initial commit with project skeleton
+- [ ] Decide on logging: CSV to start, W&B optional later
 
 ---
 
 ## Phase 1: Data Loading and Exploration (Fingerflex Only)
 
 ### Milestone 1.1 — Load and inspect raw fingerflex data
-- [ ] Write a `load_fingerflex(patient_id)` function that loads `{patient}_fingerflex.mat` and returns:
-  - `ecog`: np.ndarray, shape `(time, channels)` — the ECoG recordings
-  - `flex`: np.ndarray, shape `(time, 5)` — the 5-finger flexion targets
-  - `stim`: np.ndarray, shape `(time,)` — stimulus codes
-  - `sr`: int — sampling rate (1000 Hz)
-- [ ] Handle the varying data types across patients (int16 vs int32 vs float64 for `data`, uint16 for `flex`)
-- [ ] Use `scipy.io.loadmat` or `h5py` depending on MATLAB version — test on all 9 patients to confirm which loader works
-- [ ] Print a summary table for all 9 patients:
+- [x] Write `load_fingerflex(patient_id)` in `src/data/load_fingerflex.py` — returns ecog, flex, cue, stim, locs, sr
+- [x] Handle varying dtypes (int16/int32 -> float64, uint16 -> float64) — all 9 patients load cleanly via `scipy.io.loadmat`
+- [x] Inspection script: `scripts/inspect_fingerflex.py` — verified all 9 patients, no NaNs/Infs/dead channels
+- [x] Summary table:
 
-  | Patient | Channels | Samples | Duration (s) | Flex range |
-  |---------|----------|---------|-------------|------------|
-  | bp      | 46       | ?       | ?           | ?          |
-  | cc      | 63       | ?       | ?           | ?          |
-  | ...     | ...      | ...     | ...         | ...        |
+  | Patient | Channels | Samples   | Duration (s) | Flex range     |
+  |---------|----------|-----------|-------------|----------------|
+  | bp      | 46       | 610,040   | 610.0       | [0, 2885]      |
+  | cc      | 63       | 610,040   | 610.0       | [0, 3074]      |
+  | ht      | 64       | 610,040   | 610.0       | [0, 2701]      |
+  | jc      | 47       | 530,440   | 530.4       | [0, 2491]      |
+  | jp      | 58       | 465,840   | 465.8       | [0, 2837]      |
+  | mv      | 43       | 178,960   | 179.0       | [0, 2694]      |
+  | wc      | 64       | 610,040   | 610.0       | [0, 2875]      |
+  | wm      | 38       | 444,840   | 444.8       | [0, 2491]      |
+  | zt      | 61       | 610,040   | 610.0       | [0, 2493]      |
+
+  Notes: channel range 38–64, mv is much shorter (179s), all 1000 Hz.
 
 ### Milestone 1.2 — Exploratory data analysis
-- [ ] Plot raw ECoG traces (5-10 seconds) for 2-3 patients, all channels — check for obvious artifacts, dead channels, saturation
-- [ ] Plot the 5 finger flexion signals over time — understand the structure (are they always moving one finger at a time? overlapping? how noisy?)
-- [ ] Plot the stimulus codes over time to understand the trial structure (cue onset, movement, rest, inter-trial interval)
-- [ ] Compute and plot power spectral density (PSD) for a few channels — verify the 0.15-200 Hz bandpass and 60 Hz notch are already applied
-- [ ] Check for NaNs, Infs, or constant channels in every patient
-- [ ] Plot channel count distribution — note the range is 38-64, this will affect model input
-- [ ] Save these plots to `notebooks/01_fingerflex_exploration.ipynb` for reference
+- [ ] Plot raw ECoG traces (5-10 seconds) for 2-3 patients — check for artifacts, saturation
+- [ ] Plot 5 finger flexion signals over time — understand movement structure
+- [ ] Plot stimulus/cue codes over time — understand trial structure
+- [ ] Compute and plot PSD for a few channels — check filtering status
+- [x] Check for NaNs, Infs, or constant channels — all clean (done in 1.1)
+- [ ] Save plots to `results/eda/` for reference
 
 ### Milestone 1.3 — Understand the BCI Competition IV format
-- [ ] Load `sub1_comp.mat` — verify it contains `train_data`, `test_data`, `train_dg`
-- [ ] Load `sub1_testlabels.mat` — verify it contains `test_dg`
-- [ ] Compare the BCI Competition data to the Miller Library fingerflex data:
-  - Are they the same patients? (sub1/sub2/sub3 likely map to a subset of bp/cc/ht/jc/jp/mv/wc/wm/zt)
-  - Same sampling rate?
-  - Same number of channels?
-  - Is the train/test split temporal (first 400s train, last 200s test)?
-- [ ] This comparison determines whether you can use the BCI Competition split as a validation reference
+- [ ] Compare BCI Competition data to Miller Library fingerflex — determine if same patients
+- [ ] This is optional/deferred — we have enough to proceed with Miller data directly
 
 ---
 

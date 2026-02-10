@@ -206,5 +206,17 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Downloaded dataset files
+# Downloaded dataset files (symlinked to archive)
+data
 data/
+
+# Model checkpoints and results (symlinked to archive)
+results
+results/
+*.pt
+*.ckpt
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
