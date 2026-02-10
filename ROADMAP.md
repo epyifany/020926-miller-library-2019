@@ -22,7 +22,7 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 ### Milestone 0.3 — Version control hygiene
 - [x] `.gitignore` covers data/, results/, *.pt, *.ckpt, wandb/, symlinks
 - [x] Data and results symlinked to `/mnt/archive/` (300 GB) — see CLAUDE.md Storage Rules
-- [ ] Make an initial commit with project skeleton
+- [x] Make an initial commit with project skeleton
 - [ ] Decide on logging: CSV to start, W&B optional later
 
 ---
@@ -50,12 +50,18 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
   Notes: channel range 38–64, mv is much shorter (179s), all 1000 Hz.
 
 ### Milestone 1.2 — Exploratory data analysis
-- [ ] Plot raw ECoG traces (5-10 seconds) for 2-3 patients — check for artifacts, saturation
-- [ ] Plot 5 finger flexion signals over time — understand movement structure
-- [ ] Plot stimulus/cue codes over time — understand trial structure
-- [ ] Compute and plot PSD for a few channels — check filtering status
+- [x] Plot raw ECoG traces (5-10 seconds) for 2-3 patients — check for artifacts, saturation
+- [x] Plot 5 finger flexion signals over time — understand movement structure
+- [x] Plot stimulus/cue codes over time — understand trial structure
+- [x] Compute and plot PSD for a few channels — check filtering status
 - [x] Check for NaNs, Infs, or constant channels — all clean (done in 1.1)
-- [ ] Save plots to `results/eda/` for reference
+- [x] Save plots to `results/eda/` for reference
+
+  **EDA Observations:**
+  - ECoG traces (bp, ht, wm): typical oscillatory activity, no obvious artifacts or dead channels in sampled windows
+  - Finger flexion: clear cue-driven paradigm with discrete flexion peaks, raw values 0-3000, different baselines per finger
+  - Cue codes: values 0-5 (0=rest, 1-5=each finger), randomized trial blocks; stim has additional negative codes (-2,-1 in bp, -1 in cc) — likely preparation/rest markers
+  - **PSD confirms data is raw/unfiltered**: prominent 60 Hz powerline peak + harmonics at 120, 180 Hz across all patients. Neural signal concentrated <50 Hz, noise floor >200 Hz. Validates our preprocessing choices: notch at 60 Hz + harmonics, bandpass 1-200 Hz.
 
 ### Milestone 1.3 — Understand the BCI Competition IV format
 - [ ] Compare BCI Competition data to Miller Library fingerflex — determine if same patients
