@@ -7,6 +7,7 @@ Downloads all dataset files from the Stanford Digital Repository
 
 Usage:
     python download_dataset.py                  # Download and unzip all files
+    python download_dataset.py --continuous     # Only the 3 continuous decoding tasks (~830 MB)
     python download_dataset.py --no-unzip       # Download only, skip unzipping
     python download_dataset.py --output ./data  # Download to a custom directory
     python download_dataset.py --select         # Interactively select files
@@ -25,6 +26,13 @@ import urllib.error
 import zipfile
 
 BASE_URL = "https://stacks.stanford.edu/file/druid:zk881ps0522"
+
+# Filenames for the three continuous motor decoding tasks used in the benchmark.
+CONTINUOUS_FILENAMES = {
+    "fingerflex.zip",
+    "joystick_track.zip",
+    "mouse_track.zip",
+}
 
 # All files from the Stanford Digital Repository with their sizes and MD5 checksums.
 FILES = [
@@ -156,6 +164,11 @@ def main():
         help="Skip unzipping downloaded .zip files",
     )
     parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Download only the 3 continuous decoding datasets: fingerflex, joystick_track, mouse_track (~830 MB)",
+    )
+    parser.add_argument(
         "--select",
         action="store_true",
         help="Interactively select which files to download",
@@ -181,8 +194,10 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     files = FILES
+    if args.continuous:
+        files = [f for f in FILES if f["filename"] in CONTINUOUS_FILENAMES]
     if args.select:
-        files = select_files(FILES)
+        files = select_files(files)
 
     total_size = sum(f["size"] for f in files)
     zip_files = [f for f in files if f["filename"].endswith(".zip")]
