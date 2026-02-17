@@ -14,6 +14,75 @@ import numpy as np
 import mne
 
 
+def zscore(data: np.ndarray, mean=None, std=None):
+    """Z-score normalization per feature (column).
+
+    If mean/std are not provided, compute them from data (use for train split).
+    If provided, apply them directly (use for val/test splits with train stats).
+
+    Parameters
+    ----------
+    data : np.ndarray, shape (time, features)
+    mean : np.ndarray, shape (features,), optional
+    std : np.ndarray, shape (features,), optional
+
+    Returns
+    -------
+    normalized : np.ndarray, shape (time, features)
+    stats : dict with 'mean' and 'std', each shape (features,)
+    """
+    if mean is None:
+        mean = data.mean(axis=0)
+    if std is None:
+        std = data.std(axis=0)
+    std = std.copy()
+    std[std == 0] = 1.0
+
+    return (data - mean) / std, {"mean": mean, "std": std}
+
+
+def apply_car(data: np.ndarray):
+    """Common Average Reference — subtract median across channels per timestep.
+
+    Parameters
+    ----------
+    data : np.ndarray, shape (time, channels)
+
+    Returns
+    -------
+    np.ndarray, shape (time, channels)
+    """
+    common_avg = np.median(data, axis=1, keepdims=True)
+    return data - common_avg
+
+
+def minmax_scale(data: np.ndarray, dmin=None, dmax=None):
+    """MinMax scaling to [0, 1] per feature (column).
+
+    Matches FingerFlex (Lomtev, 2023) target scaling: sklearn MinMaxScaler.
+    If dmin/dmax not provided, compute from data (train). If provided, apply (val/test).
+
+    Parameters
+    ----------
+    data : np.ndarray, shape (time, features)
+    dmin : np.ndarray, shape (features,), optional
+    dmax : np.ndarray, shape (features,), optional
+
+    Returns
+    -------
+    scaled : np.ndarray, shape (time, features)
+    stats : dict with 'min' and 'max', each shape (features,)
+    """
+    if dmin is None:
+        dmin = data.min(axis=0)
+    if dmax is None:
+        dmax = data.max(axis=0)
+    drange = dmax - dmin
+    drange[drange == 0] = 1.0
+
+    return (data - dmin) / drange, {"min": dmin, "max": dmax}
+
+
 def normalize_and_car(ecog: np.ndarray):
     """Z-score per channel, then subtract common average (median across channels).
 

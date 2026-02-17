@@ -11,6 +11,7 @@ data:
   n_targets: 5           # 5 fingers
 
 preprocessing:
+  pipeline_mode: ours    # 'ours' (filter-first) or 'lomtev' (normalize-first)
   apply_car: true
   notch_freqs: [60, 120, 180]
   bandpass_lo: 1.0
@@ -45,3 +46,10 @@ training:
 
 evaluation:
   metric: pearson_r      # Primary metric
+  smooth_sigma_val: 0    # No smoothing for our pipeline
+  smooth_sigma_test: 0
+
+logging:
+  use_wandb: true
+  wandb_project: plact-motor-decoding
+  tags: [miller, ours, unet]

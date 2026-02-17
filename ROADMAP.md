@@ -17,13 +17,13 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 - [x] Write a `set_seed(seed)` function (`src/utils/seed.py`)
 - [x] Create a config system — YAML-based (`src/utils/config.py`, `configs/fingerflex_default.yaml`)
 - [x] `make_experiment_dir()` saves config + creates timestamped results dirs
-- [ ] Set up per-epoch CSV logging (will implement with training loop in Phase 3)
+- [x] Set up per-epoch logging — implemented via W&B (see `src/utils/wandb_utils.py`)
 
 ### Milestone 0.3 — Version control hygiene
 - [x] `.gitignore` covers data/, results/, *.pt, *.ckpt, wandb/, symlinks
 - [x] Data and results symlinked to `/mnt/archive/` (300 GB) — see CLAUDE.md Storage Rules
 - [x] Make an initial commit with project skeleton
-- [ ] Decide on logging: CSV to start, W&B optional later
+- [x] W&B logging integrated — `src/utils/wandb_utils.py` with `--no-wandb` CLI flag, project `plact-motor-decoding`, all configs updated
 
 ---
 
@@ -63,115 +63,255 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
   - Cue codes: values 0-5 (0=rest, 1-5=each finger), randomized trial blocks; stim has additional negative codes (-2,-1 in bp, -1 in cc) — likely preparation/rest markers
   - **PSD confirms data is raw/unfiltered**: prominent 60 Hz powerline peak + harmonics at 120, 180 Hz across all patients. Neural signal concentrated <50 Hz, noise floor >200 Hz. Validates our preprocessing choices: notch at 60 Hz + harmonics, bandpass 1-200 Hz.
 
-### Milestone 1.3 — Understand the BCI Competition IV format
-- [ ] Compare BCI Competition data to Miller Library fingerflex — determine if same patients
-- [ ] This is optional/deferred — we have enough to proceed with Miller data directly
+### Milestone 1.3 — BCI Competition IV Dataset 4 integration
+- [x] Downloaded and extracted BCI-IV data (3 subjects: 62ch, 48ch, 64ch)
+- [x] `src/data/load_bci4.py` — `load_bci4(subject_id, data_dir)` loads pre-split train/test
+- [x] Added `interpolate_fingerflex()` to `preprocessing_lomtev.py` — cubic interpolation 25 Hz → 100 Hz
+- [x] Added `build_bci4_lomtev_datasets(subject_id, config)` to `dataset_lomtev.py` — full Lomtev pipeline for BCI-IV
+- [x] Created `configs/bci4_lomtev.yaml` — 50 Hz powerline, pre-split train/test, 25 Hz finger interpolation
+- [x] Verified all 3 subjects with `scripts/verify_bci4.py`
+- [x] Trained and evaluated Lomtev U-Net on all 3 subjects:
+
+  | Subject | Ch | Params  | Best Val r | Test r (avg) | Test r (per finger)           |
+  |---------|-----|---------|-----------|-------------|-------------------------------|
+  | 1       | 62  | 652,613 | **0.686** | **0.578**   | 0.55 0.75 0.47 0.62 0.51     |
+  | 2       | 48  | 598,853 | **0.633** | **0.520**   | 0.45 0.72 0.51 0.49 0.43     |
+  | 3       | 64  | 660,293 | **0.737** | **0.692**   | 0.76 0.62 0.63 0.74 0.72     |
+  | **Mean** | — | —       | **0.685** | **0.597**   |                               |
+
+  - Subject 1 matches FingerFlex reference (val r=0.686 vs 0.662–0.677 in original)
+  - Subject 3 hits 0.737 val r / 0.692 test r — strongest subject
+  - All results: 40 epochs, batch=128, lr=8.42e-5, mse_cosine loss, seed=123
+  - Key to matching FingerFlex: full-signal evaluation (not windowed), Gaussian smoothing (σ_val=6, σ_test=1), correlation-based model selection
+  - Training script: `scripts/train_lomtev_bci4.py`
 
 ---
 
 ## Phase 2: Preprocessing Pipeline (Fingerflex)
 
 ### Milestone 2.1 — Design the preprocessing pipeline
-- [ ] Document every preprocessing step and its justification. The pipeline should be:
-  1. **Load raw data** (Milestone 1.1)
-  2. **Common Average Reference (CAR)** — subtract mean across channels at each time point. The Miller Library already provides `car.m`; replicate this exactly in Python
-  3. **Notch filter at 60 Hz** — verify if already applied; if not, apply a notch filter at 60, 120, 180 Hz (harmonics)
-  4. **Bandpass filter** — verify the existing 0.15-200 Hz hardware filter is sufficient; optionally apply a tighter software bandpass (e.g., 1-200 Hz) to remove residual DC drift
-  5. **Normalize ECoG** — z-score per channel (subtract mean, divide by std) computed on training set only
-  6. **Normalize targets** — z-score per finger, computed on training set only. Store the mean/std for inverse transform at evaluation time
-  7. **Windowing** — segment continuous data into overlapping windows (e.g., 1-second windows with 100ms hop → 10 Hz output rate). Window size is a hyperparameter.
-- [ ] Write unit tests: verify CAR output has zero mean across channels, verify z-score output has mean≈0 std≈1, verify windowing produces correct number of segments
+- [x] Document every preprocessing step and its justification.
+- [x] Verified: CAR produces zero median across channels, z-score gives mean≈0 std≈1, windowing round-trips correctly
+- [x] **Two pipeline modes** controlled by `preprocessing.pipeline_mode` in config:
+
+  **Mode `ours` (default)** — our best interpretation for raw 1000 Hz ECoG:
+  1. Load raw data
+  2. Bandpass 1–200 Hz + notch 60 Hz harmonics (full signal, pre-split)
+  3. Temporal split 70/15/15
+  4. Z-score ECoG per-channel (fit train, apply all)
+  5. CAR median (each split independently)
+  6. Z-score targets per-finger (fit train, apply all)
+  7. On-the-fly windowing (1s window, 100ms hop @ 1000 Hz)
+
+  **Mode `lomtev`** — faithful to FingerFlex (Lomtev, 2023):
+  1. Load raw data
+  2. Z-score ECoG per-channel + CAR median (full signal, pre-split)
+  3. Bandpass 40–300 Hz + notch 60 Hz harmonics
+  4. Temporal split 70/15/15
+  5. MinMax [0,1] targets per-finger (fit train, apply all)
+  6. On-the-fly windowing (1s window, 100ms hop @ 1000 Hz)
+
+  **Rationale for two modes**: Lomtev's pipeline is proven (~0.7 r on BCI-IV). Ours reorders filtering before normalization (more principled: stats computed on the signal distribution models will see). Both share the same Dataset class. Config switch lets us ablate pipeline choices directly.
+
+  | Choice | `ours` | `lomtev` | Why diverge |
+  |--------|--------|----------|-------------|
+  | Preprocessing order | filter → zscore → CAR | zscore → CAR → filter | Filter changes distribution; stats should reflect final signal |
+  | Bandpass | 1–200 Hz | 40–300 Hz | Miller data is US (60 Hz); wider low-freq band captures movement-related potentials |
+  | Powerline | 60 Hz | 50 Hz (Lomtev) / 60 Hz (us) | Data-dependent; configurable |
+  | Target scaling | z-score | MinMax [0,1] | Z-score standard for regression w/ linear output; MinMax pairs with sigmoid |
+  | Input representation | Raw ECoG @ 1000 Hz | Raw ECoG @ 1000 Hz | Both — wavelet spectrograms are a separate ablation (Phase 8) |
 
 ### Milestone 2.2 — Implement the preprocessing pipeline
-- [ ] `src/data/preprocessing.py`:
-  - `apply_car(ecog)` → np.ndarray
-  - `apply_notch(ecog, sr, freqs=[60, 120, 180])` → np.ndarray
-  - `apply_bandpass(ecog, sr, lo, hi)` → np.ndarray
-  - `normalize(data, mean=None, std=None)` → (np.ndarray, mean, std)
-- [ ] `src/data/windowing.py`:
-  - `create_windows(ecog, targets, window_size, hop_size)` → (windows, labels)
-  - windows shape: `(n_windows, window_size, channels)`
-  - labels shape: `(n_windows, n_targets)` or `(n_windows, window_size, n_targets)` depending on whether you predict one output per window or a full sequence
-- [ ] All preprocessing parameters should come from config, not hardcoded
+- [x] `src/data/preprocessing.py` — added `zscore(data, mean, std)` and `apply_car(data)` helpers; existing `filter_ecog`, `normalize_and_car`, `normalize_targets` unchanged
+- [x] `src/data/windowing.py` — `create_windows(signal, window_size, hop_size)` → (n_windows, window_size, features); `reconstruct_from_windows(windows, hop_size, n_samples)` for evaluation
+- [x] All preprocessing parameters come from `configs/fingerflex_default.yaml`
+- [x] Add `minmax_scale(data, dmin, dmax)` to `preprocessing.py` — MinMax [0,1] scaling for lomtev mode targets
+- [x] Add `pipeline_mode` switch to `build_datasets()` — dispatches to `_build_ours()` or `_build_lomtev()` based on `preprocessing.pipeline_mode` config key
+- [x] Create `configs/fingerflex_lomtev.yaml` — Lomtev-faithful settings (bandpass 40–300 Hz, normalize-first, MinMax targets, lr=8.42e-5, batch=128, loss=mse_cosine)
+- [x] Verified both modes on all 9 patients — `scripts/verify_pipeline_modes.py`
 
 ### Milestone 2.3 — Train/test split strategy
-- [ ] **Within-subject, temporal split**: For each patient, split the continuous recording into contiguous blocks:
-  - First 70% → training
-  - Next 15% → validation
-  - Last 15% → test
-- [ ] **Critical: no shuffling of time points.** This is a time series — shuffling would leak future information into training. Use contiguous blocks only.
-- [ ] If the BCI Competition IV split maps to these patients, consider using their exact train/test boundary for comparability
-- [ ] Store split indices (not the data itself) so they're reproducible
-- [ ] Write a `src/data/splits.py` module that returns train/val/test indices given a patient ID and config
+- [x] `src/data/splits.py` — `temporal_split(n_samples, train_frac, val_frac, test_frac)` returns contiguous (start, end) index tuples
+- [x] No shuffling — contiguous blocks only (70/15/15 default)
+- [x] Split indices stored in `build_datasets()` return dict for reproducibility
+- [ ] If the BCI Competition IV split maps to these patients, consider using their exact train/test boundary for comparability (deferred)
 
 ### Milestone 2.4 — PyTorch Dataset and DataLoader
-- [ ] Implement `FingerfFlexDataset(patient_id, split, config)` extending `torch.utils.data.Dataset`
-  - `__getitem__` returns `(ecog_window, target)` as float32 tensors
-  - Preprocessing is applied on init (or cached to disk after first run)
-- [ ] Handle variable channel counts:
-  - **Option A (recommended to start):** Train per-patient models with patient-specific input dimensions — simplest, no interpolation needed
-  - **Option B (later):** Zero-pad to max channels (64) with a channel mask
-  - **Option C (later):** Select a fixed subset of channels based on anatomical region (e.g., only sensorimotor cortex)
-- [ ] Verify DataLoader produces correct shapes: `(batch, window_size, channels)` for ECoG, `(batch, n_targets)` for targets
-- [ ] Test on all 9 patients — confirm no crashes, print shapes
+- [x] `src/data/dataset.py` — `FingerFlexDataset(ecog, flex, window_size, hop_size)` with on-the-fly windowing in `__getitem__`, returns `(ecog_window, flex_window)` as float32 tensors
+- [x] `build_datasets(patient_id, config)` — full pipeline orchestrator: load → filter → split → normalize → dataset. Returns train/val/test datasets + normalization stats
+- [x] Using Option A: per-patient models with patient-specific channel counts (38–64 channels)
+- [x] Verified DataLoader shapes: `(batch, 1000, channels)` for ECoG, `(batch, 1000, 5)` for targets
+- [x] All 9 patients load successfully — verified with `scripts/verify_pipeline.py`
+
+  | Patient | Ch | Train windows | Val windows | Test windows |
+  |---------|-----|--------------|-------------|--------------|
+  | bp      | 46  | 4261         | 906         | 906          |
+  | cc      | 63  | 4261         | 906         | 906          |
+  | ht      | 64  | 4261         | 906         | 906          |
+  | jc      | 47  | 3704         | 786         | 786          |
+  | jp      | 58  | 3251         | 689         | 689          |
+  | mv      | 43  | 1243         | 259         | 259          |
+  | wc      | 64  | 4261         | 906         | 906          |
+  | wm      | 38  | 3104         | 658         | 658          |
+  | zt      | 61  | 4261         | 906         | 906          |
 
 ---
 
 ## Phase 3: Baseline Model — U-Net on Fingerflex
 
-### Milestone 3.1 — Implement U-Net architecture
-- [ ] Study the FingerFlex U-Net paper (Lomtev, 2020) — document the exact architecture:
-  - Input: `(batch, channels, time)` — note: Conv1d expects channel-first
-  - Encoder: series of Conv1d + BatchNorm + ReLU + MaxPool1d blocks
-  - Bottleneck
-  - Decoder: series of ConvTranspose1d + skip connections from encoder
-  - Output: `(batch, n_fingers, time)` or `(batch, n_fingers)` depending on output strategy
-- [ ] Implement in `src/models/unet.py`
-- [ ] Print model summary: parameter count, input/output shapes
-- [ ] Verify forward pass works with a random tensor matching one patient's dimensions
-- [ ] Target parameter count: note it for later comparison with TCN and Transformer (important for fair comparison)
+### Milestone 3.0 — Port FingerFlex-Lomtev into our codebase
+- [x] FingerFlex U-Net (Lomtev, 2023) already reproduced in `../FingerFlex/` notebooks — **~0.7 mean Pearson r** on BCI Competition IV data (1 subject, wavelet spectrograms, 100 Hz)
+- [x] **Ported the Lomtev implementation as clean Python scripts** into our codebase:
+
+  **Model** → `src/models/unet_lomtev.py`:
+  - [x] `ConvBlock` — Conv1d (no bias) + LayerNorm + GELU + Dropout(0.1) + MaxPool1d
+  - [x] `UpConvBlock` — ConvBlock + nn.Upsample(mode='linear')
+  - [x] `AutoEncoder1D` — spatial_reduce (n_ch×n_freq → 32) + 5 encoder blocks [32→32→64→64→128] + 5 decoder blocks with skip concatenation + Conv1d 1×1 → n_fingers
+  - [x] 652,613 params (62ch) / 591,173 params (46ch) — matches original
+
+  **Lomtev preprocessing** → `src/data/preprocessing_lomtev.py`:
+  - [x] `compute_spectrograms(ecog, sr, freqs)` — MNE Morlet wavelets, 40 log-spaced freqs in [40, 300] Hz
+  - [x] `downsample_spectrograms(spec, cur_fs, new_fs)` — stride-based downsampling to 100 Hz
+  - [x] `crop_for_time_delay(flex, spec, delay_sec, fs)` — shift targets by 200ms neural delay
+  - [x] `robust_scale_spectrograms(train, val, test)` — RobustScaler (unit_variance, quantile 0.1–0.9)
+  - [x] `minmax_scale_flex(train, val, test)` — MinMaxScaler [0,1] on finger targets
+  - [x] `interpolate_fingerflex(finger_flex, cur_fs, true_fs, needed_hz)` — cubic interpolation for BCI-IV 25 Hz finger data
+
+  **Lomtev Dataset** → `src/data/dataset_lomtev.py`:
+  - [x] `LomtevDataset(spec, flex, sample_len, stride)` — stride-1 windowing on spectrograms
+  - [x] `build_lomtev_datasets(patient_id, config)` — full 11-step pipeline
+
+  **Verification** → `scripts/verify_lomtev.py` — all 9 patients verified:
+
+  | Patient | Ch | Wavelets | Train win | Val win | Test win |
+  |---------|-----|---------|-----------|---------|----------|
+  | bp      | 46  | 40      | 42,426    | 8,875   | 8,875    |
+  | cc      | 63  | 40      | 42,426    | 8,875   | 8,875    |
+  | ht      | 64  | 40      | 42,426    | 8,875   | 8,875    |
+  | jc      | 47  | 40      | 36,854    | 7,681   | 7,681    |
+  | jp      | 58  | 40      | 32,332    | 6,712   | 6,712    |
+  | mv      | 43  | 40      | 12,251    | 2,408   | 2,409    |
+  | wc      | 64  | 40      | 42,426    | 8,875   | 8,875    |
+  | wm      | 38  | 40      | 30,862    | 6,397   | 6,397    |
+  | zt      | 61  | 40      | 42,426    | 8,875   | 8,875    |
+
+  - [x] Train on one patient, check we get reasonable r (target: comparable to ~0.7) — smoke-tested bp (2 epochs, val r=0.40), then full 40-epoch runs on all 9 patients
+
+- [x] **Key differences documented**:
+
+  | Aspect | Original Lomtev | Our Lomtev port |
+  |--------|----------------|-----------------|
+  | Data | BCI-IV (1 subject, pre-split) | Miller Library (9 subjects, our 70/15/15 split) |
+  | Channels | Fixed 62 | Variable 38–64 per patient |
+  | Powerline | 50 Hz (European) | 60 Hz (US) |
+  | Input to model | (62, 40, 256) | (n_ch, 40, 256) — spatial_reduce adapts to n_ch×40 |
+  | Scaler fitting | On pre-split train file | On train portion only (proper) |
+
+- [x] **Anchor baseline: Lomtev U-Net on all 9 Miller patients** (seed=123, 40 epochs, batch=128, lr=8.42e-5, mse_cosine loss, full-signal eval, σ_val=6, σ_test=1)
+
+  Training script: `scripts/train_lomtev_miller.py` | Batch runner: `scripts/run_all_miller.sh`
+  Config: `configs/fingerflex_lomtev.yaml` (added `preprocessing_lomtev` + `windowing_lomtev` sections)
+
+  | Patient | Ch | Params  | Best Val r | Test r (avg) | Test r (per finger)                  |
+  |---------|-----|---------|-----------|-------------|--------------------------------------|
+  | bp      | 46  | 591,173 | 0.627     | 0.369       | 0.40, 0.27, 0.39, 0.63, 0.15        |
+  | cc      | 63  | 656,453 | 0.682     | **0.725**   | 0.79, 0.61, 0.69, 0.79, 0.74        |
+  | ht      | 64  | 660,293 | 0.359     | 0.287       | 0.29, 0.30, 0.11, 0.39, 0.35        |
+  | jc      | 47  | 595,013 | 0.617     | 0.536       | 0.60, 0.61, 0.41, 0.67, 0.38        |
+  | jp      | 58  | 637,253 | 0.576     | 0.548       | 0.70, 0.73, 0.24, 0.66, 0.41        |
+  | mv      | 43  | 579,653 | 0.693     | 0.460       | -0.31, 0.86, 0.53, 0.50, 0.72       |
+  | wc      | 64  | 660,293 | 0.471     | 0.383       | 0.56, 0.66, 0.38, 0.18, 0.13        |
+  | wm      | 38  | 560,453 | 0.323     | 0.083       | 0.05, 0.06, 0.21, 0.09, 0.00        |
+  | zt      | 61  | 648,773 | **0.705** | **0.600**   | 0.54, 0.71, 0.65, 0.62, 0.49        |
+  | **Mean** | —  | —       | **0.561** | **0.443**   |                                      |
+  | **Std**  | —  | —       | 0.139     | 0.192       |                                      |
+  | **Ref: BCI-IV** | 48-64 | — | **0.685** | **0.597** | (3 subjects, see Milestone 1.3)    |
+
+  **Observations:**
+  - **Wide patient variability**: test r ranges from 0.08 (wm) to 0.73 (cc). This is expected — electrode placement, cortical coverage, and task engagement vary across patients.
+  - **Top 3 patients** (cc, zt, jp) achieve test r > 0.54, comparable to BCI-IV reference results.
+  - **Bottom 2 patients** (wm, ht) have test r < 0.30 — likely poor motor cortex coverage or sparse electrode grids (wm has only 38 channels).
+  - **mv anomaly**: thumb (finger 0) has negative test r (-0.31) while other fingers are strong (0.50–0.86). This 179s recording is also the shortest, making the test split very small (~27s). The model may have overfit to val patterns that don't generalize.
+  - **Val-test gap**: mean val r (0.56) is consistently higher than test r (0.44), especially for bp (val 0.63 → test 0.37). Full-signal evaluation on different temporal segments can reveal non-stationarities in the neural signal.
+  - **Overall**: the Lomtev pipeline transfers to Miller data with degraded but reasonable performance. The mean test r of 0.44 across 9 patients (vs 0.60 on 3 BCI-IV subjects) is our anchor. New architectures (TCN, Transformer) and raw-ECoG pipelines will be compared against this baseline.
+
+### Milestone 3.1 — Shared training framework + Raw ECoG U-Net
+- [x] **Shared training framework** — eliminated ~365 lines of duplicated code across two training scripts:
+  - `src/training/losses.py` — loss registry (`mse`, `mse_cosine`) with `get_loss_fn(name)`
+  - `src/evaluation/metrics.py` — `pearson_r_per_channel()`, `smooth_predictions(pred, sigma)`
+  - `src/training/trainer.py` — `Trainer` class with `train_one_epoch()`, `evaluate_windowed()`, `evaluate_fullsig()`, `fit()`, `test()`
+  - `src/data/__init__.py` — `build_data(config)` dispatcher (routes to correct dataset builder based on task + model name)
+  - `src/models/__init__.py` — `MODEL_REGISTRY` + `build_model(config, dataset_info)` (model registry pattern)
+  - `scripts/train.py` — unified ~80-line entry point with CLI overrides (`--config`, `--patient`, `--subject`, `--epochs`, `--batch_size`, `--lr`, `--gpu`, `--seed`, `--no-wandb`)
+- [x] **Raw ECoG U-Net** — `src/models/unet_raw.py` (`AutoEncoder1DRaw`):
+  - Input: `(batch, n_channels, time)` — raw ECoG (channels-first), no spectrogram
+  - Reuses `ConvBlock`, `UpConvBlock` from `unet_lomtev.py`
+  - `spatial_reduce`: maps `n_channels` (~50) → `channels[0]` (vs `n_ch × 40` wavelets in Lomtev)
+  - Same encoder/decoder/skip architecture as `AutoEncoder1D`
+  - 418,949 params (46ch) vs 591,173 for Lomtev spectrogram variant
+  - Config: `configs/fingerflex_raw_unet.yaml` (1-200 Hz bandpass, window_size=1024, lr=1e-3, MSE loss)
+- [x] **Dataset changes** for framework compatibility:
+  - `FingerFlexDataset.__getitem__()` now returns channels-first `(channels, time)`, `(n_targets, time)`
+  - Both `FingerFlexDataset` and `LomtevDataset` have `get_full_signal()` for full-signal eval
+  - Both builder functions return `n_input_features` in their dicts
+- [x] **Backward compatibility**: old scripts (`train_lomtev_miller.py`, `train_lomtev_bci4.py`) still work unchanged
+- [x] **Verification** — 3 smoke tests passed:
+  - Old script: `train_lomtev_miller.py --patient bp --epochs 2` → val r=0.4001
+  - New unified: `train.py --config fingerflex_lomtev.yaml --patient bp --epochs 2` → val r=0.3999 (matches)
+  - Raw U-Net: `train.py --config fingerflex_raw_unet.yaml --patient bp --epochs 2` → val r=0.2923 (trains, 4.4s pipeline vs 101s for spectrograms)
+- [x] **Extensibility**: adding a new model = one .py file + one config + one line in MODEL_REGISTRY
+- [x] We now have **two U-Net variants**: `unet_lomtev.py` (spectrogram input, identical to paper) and `unet_raw.py` (raw ECoG input, our adaptation)
 
 ### Milestone 3.2 — Training loop
-- [ ] Implement `src/training/trainer.py` with:
-  - Loss function: MSE (standard for regression)
-  - Optimizer: Adam with configurable learning rate (start with 1e-3)
-  - Learning rate scheduler: ReduceLROnPlateau or CosineAnnealing (configurable)
-  - Early stopping: patience of N epochs on validation loss
-  - Gradient clipping: max norm 1.0 (ECoG data can have scale issues)
-  - Checkpoint saving: save best model (by validation loss) and last model
-- [ ] Log per-epoch: training loss, validation loss, validation Pearson r (per finger and averaged)
-- [ ] Save training curves to `results/{experiment_id}/`
+- [x] Implemented `src/training/trainer.py` with:
+  - Loss function: configurable via registry — `mse` (our default) or `mse_cosine` (0.5×MSE + 0.5×(1-cos), Lomtev's choice)
+  - Optimizer: Adam with configurable learning rate (1e-3 for raw, 8.42e-5 for lomtev mode)
+  - Learning rate scheduler: ReduceLROnPlateau (configurable, `"none"` to disable)
+  - Early stopping: patience of N epochs on validation correlation
+  - Gradient clipping: max norm 1.0
+  - Checkpoint saving: save best model by max correlation (not min loss)
+- [x] Log per-epoch: training loss, validation loss, validation Pearson r (per channel and averaged)
+- [x] Results saved to `results/{timestamp}_{model}_{patient}/` with config + results.json
 
 ### Milestone 3.3 — Evaluation metrics
-- [ ] Implement `src/evaluation/metrics.py`:
-  - `pearson_r(predicted, actual)` — Pearson correlation coefficient per target dimension
-  - `mean_pearson_r(predicted, actual)` — average across target dimensions (fingers or X/Y)
-  - `mse(predicted, actual)` — for monitoring, not the primary metric
-  - `r_squared(predicted, actual)` — coefficient of determination, useful secondary metric
-- [ ] For Pearson r, compute on the **full test set continuously** (not averaged across windows) — reconstruct the continuous prediction from overlapping windows, then correlate with ground truth
+- [x] Implemented `src/evaluation/metrics.py`:
+  - `pearson_r_per_channel(pred, target)` — generalised to arbitrary output channels (fingers, joystick X/Y)
+  - `smooth_predictions(pred, sigma)` — Gaussian smoothing on model output
+- [x] Full-signal evaluation via `Trainer.evaluate_fullsig()` — uses `dataset.get_full_signal()`, aligns to model stride, no windowing artifacts
+- [x] **Prediction smoothing** (configurable per config): `smooth_sigma_val` and `smooth_sigma_test`
+  - Lomtev config: σ_val=6, σ_test=1 (matches FingerFlex)
+  - Raw config: σ_val=0, σ_test=0 (no smoothing)
 - [ ] Write unit tests: perfect prediction → r=1.0, random prediction → r≈0, inverted prediction → r=-1.0
 
-### Milestone 3.4 — Train U-Net on one patient
-- [ ] Pick patient `bp` (or whichever has the most data/cleanest signals from exploration)
-- [ ] Train with default hyperparameters
-- [ ] Plot: training/validation loss curves, predicted vs. actual finger traces for test set
-- [ ] Compute Pearson r per finger and averaged
-- [ ] Sanity check: does the model clearly beat a trivial baseline? (e.g., predicting the mean, or predicting the previous time step)
-- [ ] If Pearson r < 0.3 on the best finger, something is likely wrong — debug before proceeding
+### Milestone 3.4 — Train raw U-Net on all 9 fingerflex patients
+- [x] Trained `unet_raw` on all 9 patients (seed=123, 100 epochs max, early stopping patience=15, batch=32, lr=1e-3, MSE loss, 1-200 Hz bandpass, no smoothing)
+- [x] Batch runner: `scripts/run_raw_unet_all.sh` — 4 GPUs, ~3 min total
 
-### Milestone 3.5 — Train U-Net on all 9 fingerflex patients
-- [ ] Write a loop/script that trains on each patient independently with identical config
-- [ ] Store results in a table:
+  | Patient | Ch | Raw U-Net test r | Lomtev Spec test r | Delta | Early stop |
+  |---------|-----|-----------------|-------------------|-------|------------|
+  | bp      | 46  | 0.328           | 0.369             | -0.04 | ep 24      |
+  | cc      | 63  | **0.484**       | **0.725**         | -0.24 | ep 21      |
+  | ht      | 64  | 0.256           | 0.287             | -0.03 | ep 18      |
+  | jc      | 47  | 0.211           | 0.536             | -0.33 | ep 18      |
+  | jp      | 58  | 0.065           | 0.548             | -0.48 | ep 26      |
+  | mv      | 43  | 0.285           | 0.460             | -0.17 | ep 20      |
+  | wc      | 64  | 0.206           | 0.383             | -0.18 | ep 29      |
+  | wm      | 38  | 0.009           | 0.083             | -0.07 | ep 33      |
+  | zt      | 61  | 0.196           | 0.600             | -0.40 | ep 29      |
+  | **Mean** | — | **0.227**       | **0.443**         | **-0.22** |        |
+  | **Std**  | — | 0.133           | 0.192             |       |            |
 
-  | Patient | Channels | r (thumb) | r (index) | r (middle) | r (ring) | r (little) | r (mean) |
-  |---------|----------|-----------|-----------|------------|----------|------------|----------|
-  | bp      | 46       |           |           |            |          |            |          |
-  | cc      | 63       |           |           |            |          |            |          |
-  | ...     | ...      |           |           |            |          |            |          |
+  **Observations:**
+  - Spectrogram pipeline wins on all 9 patients. Mean test r 0.227 (raw) vs 0.443 (spec) — roughly half.
+  - Raw models early-stop quickly (ep 18-33), suggesting they plateau fast and can't learn deeper temporal-frequency features.
+  - The wavelet spectrograms aren't just preprocessing — they perform critical feature extraction (time-frequency decomposition) that the raw U-Net's spatial_reduce layer can't replicate.
+  - Same patient difficulty ranking holds: cc is best, wm/jp are weakest in both pipelines.
+  - **Conclusion**: spectrogram pipeline is the primary input for TCN/Transformer comparisons. Raw ECoG revisited in Phase 8 ablations (learnable filterbank front-end).
 
 - [ ] Compute group statistics: mean ± std of mean Pearson r across patients
 - [ ] Identify any patients that perform much worse — investigate (bad data? too few channels? electrode placement away from motor cortex?)
-- [ ] Compare against BCI Competition IV published results if applicable
+- [ ] **Pick the best pipeline** based on these results — use it as default for Phases 4–7
+- [ ] This three-way comparison answers: does the Lomtev architecture work on our data? Does the wavelet representation matter? Does preprocessing order matter?
 - [ ] This table is your **baseline**. All subsequent models will be compared against these numbers.
 
 ### Milestone 3.6 — Trivial baselines
@@ -230,20 +370,22 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
   - Linear warmup for first 10% of training steps
   - Document any deviations from the shared config and justify them
 
-### Milestone 5.3 — Three-way comparison on fingerflex
-- [ ] Combine results into a single table:
+### Milestone 5.3 — Architecture comparison on fingerflex
+- [ ] Combine results into a single table (using the winning pipeline from 3.5):
 
-  | Patient | U-Net r | TCN r | Transformer r |
-  |---------|---------|-------|---------------|
-  | bp      |         |       |               |
-  | ...     |         |       |               |
-  | **Mean**|         |       |               |
-  | **Std** |         |       |               |
+  | Patient | U-Net r | TCN r | Transformer r | Lomtev U-Net (spectrograms) r |
+  |---------|---------|-------|---------------|-------------------------------|
+  | bp      |         |       |               |                               |
+  | ...     |         |       |               |                               |
+  | **Mean ± Std** |  |       |               |                               |
+  | **Ref: Lomtev (BCI-IV)** | — | — | — | 0.55 (mean), 0.68 (sub3) |
 
 - [ ] Paired Wilcoxon signed-rank tests for each pair: UNet vs TCN, UNet vs Transformer, TCN vs Transformer
 - [ ] Apply Holm-Bonferroni correction for 3 comparisons
 - [ ] Plot: grouped bar chart or boxplot showing distribution of Pearson r across patients for each model
 - [ ] Plot: per-patient scatter (e.g., U-Net r vs. TCN r) to visualize whether the same patients are easy/hard across models
+- [ ] Include Lomtev spectrogram baseline as a reference in all plots
+- [ ] The Lomtev column answers: is the spectrogram representation consistently better/worse than raw ECoG across architectures?
 
 **This is your first checkpoint — the fingerflex-only comparison. If you're under time pressure, this alone is a publishable result.**
 
@@ -322,7 +464,13 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 - [ ] Report: how sensitive is each architecture to these hyperparameters? (Transformers are often more sensitive to LR than CNNs)
 - [ ] Select the best shared config for final results (or report with architecture-specific best configs and note the difference)
 
-### Milestone 8.2 — Ablation: frequency bands
+### Milestone 8.2 — Ablation: pipeline mode (ours vs lomtev)
+- [ ] If not already settled in Phase 3.5, run all three architectures under both pipeline modes
+- [ ] Report whether preprocessing order or target scaling affects results more
+- [ ] Test prediction smoothing: report r with sigma=0, 1, 6 for one patient — quantify how much smoothing inflates metrics
+- [ ] This is a practical finding: does it matter how you preprocess, or is the architecture the bigger factor?
+
+### Milestone 8.3 — Ablation: frequency bands
 - [ ] Test the effect of input frequency content on decoding performance
 - [ ] Filter ECoG into bands before feeding to models:
   - Broadband (1-200 Hz) — baseline
@@ -332,13 +480,13 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 - [ ] Run on one patient, one model (U-Net), report Pearson r per band
 - [ ] This tells you which frequency content drives decoding and is a useful practical finding
 
-### Milestone 8.3 — Ablation: window size effect on each task
+### Milestone 8.4 — Ablation: window size effect on each task
 - [ ] Fingerflex involves fast, fine movements — may benefit from shorter windows
 - [ ] Joystick/mouse involve slow, smooth tracking — may benefit from longer windows
 - [ ] Test [250ms, 500ms, 1000ms, 2000ms] across all three tasks with one model
 - [ ] If optimal window size differs by task, report it — practical implication for BCI system design
 
-### Milestone 8.4 — Computational cost comparison
+### Milestone 8.5 — Computational cost comparison
 - [ ] For each architecture, measure and report:
   - Parameter count
   - FLOPs per inference (use `torchinfo` or `fvcore`)
@@ -372,7 +520,7 @@ Benchmark three deep learning architectures (U-Net, TCN, Transformer) across thr
 - [ ] Table 1: Dataset characteristics (patients, channels, duration, target dims per task)
 - [ ] Table 2: Architecture specifications (layers, parameters, FLOPs, inference latency)
 - [ ] Table 3: Main results (Pearson r per patient, per task, per model, with means and p-values)
-- [ ] Table 4: Ablation results (hyperparameter sensitivity, frequency bands)
+- [ ] Table 4: Ablation results (hyperparameter sensitivity, frequency bands, pipeline mode ours vs lomtev)
 
 ---
 
@@ -490,5 +638,5 @@ These are explicitly out of scope for the first paper but form the natural exten
 - **Cross-subject transfer**: Train on N-1 patients, test on held-out patient
 - **New architectures**: Mamba/S4 state-space models, hybrid CNN-Transformer
 - **Real-time latency**: Measure end-to-end inference time, simulate online BCI loop
-- **Feature engineering comparison**: raw ECoG vs. spectrograms vs. wavelet features as model input
+- **Feature engineering comparison**: extend beyond Lomtev wavelets — test band-power features, Hilbert envelope, learned filterbanks (SincNet-style) as alternative input representations
 - **Multi-task learning**: single model trained on all tasks simultaneously

@@ -29,7 +29,8 @@ def make_experiment_dir(config: dict, base_dir: str = "results") -> str:
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = config.get("model", {}).get("name", "unknown")
-    patient = config.get("data", {}).get("patient", "unknown")
+    data_cfg = config.get("data", {})
+    patient = data_cfg.get("patient", data_cfg.get("subject", "unknown"))
     exp_id = f"{timestamp}_{model_name}_{patient}"
 
     exp_dir = os.path.join(base_dir, exp_id)
