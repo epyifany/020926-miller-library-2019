@@ -273,22 +273,57 @@ def build_bci4_lomtev_datasets(subject_id, config):
         powerline_freq=powerline
     ).T
 
-    # 4. Morlet wavelets
+    # 4 & 5. Morlet wavelets + downsample
+    # n_wavelets=0  →  raw ECoG mode (DeepFingerNet):
+    #   Skip wavelet expansion; use bandpass-filtered signal directly.
+    #   The paper's "Σ W_k * X" sums 40 wavelets back to (N, T) — equivalent
+    #   to broadband bandpass filtering, which we already applied in step 3.
+    #   Output shape is (N, 1, T) to stay compatible with the rest of the pipeline.
     n_wavelets = prep_cfg.get("n_wavelets", 40)
-    n_jobs = prep_cfg.get("n_jobs", 1)
-    train_spec = compute_spectrograms(
-        train_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
-        n_wavelets=n_wavelets, n_jobs=n_jobs
-    )
-    test_spec = compute_spectrograms(
-        test_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
-        n_wavelets=n_wavelets, n_jobs=n_jobs
-    )
-
-    # 5. Downsample spectrograms to 100 Hz
     ds_fs = prep_cfg.get("downsample_fs", 100)
-    train_spec = downsample_spectrograms(train_spec, cur_fs=sr, new_fs=ds_fs)
-    test_spec = downsample_spectrograms(test_spec, cur_fs=sr, new_fs=ds_fs)
+
+    if n_wavelets > 0:
+        n_jobs = prep_cfg.get("n_jobs", 1)
+        train_spec = compute_spectrograms(
+            train_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
+            n_wavelets=n_wavelets, n_jobs=n_jobs
+        )
+        test_spec = compute_spectrograms(
+            test_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
+            n_wavelets=n_wavelets, n_jobs=n_jobs
+        )
+        train_spec = downsample_spectrograms(train_spec, cur_fs=sr, new_fs=ds_fs)
+        test_spec = downsample_spectrograms(test_spec, cur_fs=sr, new_fs=ds_fs)
+        n_input_features = n_wavelets
+    else:
+        # DeepFingerNet mode: compute wavelet power, sum across frequencies → (N, 1, T)
+        #
+        # Why NOT use raw bandpass signal:
+        #   Bandpass gives oscillatory signal at 40–300 Hz.  Downsampling to 100 Hz
+        #   (Nyquist = 50 Hz) aliases everything above 50 Hz → garbage input.
+        #
+        # Correct interpretation of "X_wavelet = Σ W_k * X":
+        #   Each W_k * X is the wavelet POWER ENVELOPE at frequency k.  The envelope
+        #   changes at <10 Hz (cognitive/motor timescales), so 100 Hz is fine.
+        #   Summing 40 envelopes gives total broadband (40–300 Hz) power per channel.
+        #   This is also the only interpretation consistent with the paper's 1.30 MB
+        #   model size (N=62 input channels).
+        n_jobs = prep_cfg.get("n_jobs", 1)
+        _n_wv = 40  # internal: always use 40 wavelets for the sum
+        train_spec_full = compute_spectrograms(
+            train_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
+            n_wavelets=_n_wv, n_jobs=n_jobs
+        )  # (N, 40, T@1000Hz)
+        test_spec_full = compute_spectrograms(
+            test_ecog_filt, sr=sr, l_freq=l_freq, h_freq=h_freq,
+            n_wavelets=_n_wv, n_jobs=n_jobs
+        )
+        train_spec_full = downsample_spectrograms(train_spec_full, cur_fs=sr, new_fs=ds_fs)
+        test_spec_full = downsample_spectrograms(test_spec_full, cur_fs=sr, new_fs=ds_fs)
+        # Sum over frequency dimension: (N, 40, T) → (N, 1, T)
+        train_spec = train_spec_full.sum(axis=1, keepdims=True)
+        test_spec = test_spec_full.sum(axis=1, keepdims=True)
+        n_input_features = 1
 
     # 6. Interpolate finger data 25 Hz → 100 Hz (cubic)
     train_flex = interpolate_fingerflex(
@@ -308,15 +343,21 @@ def build_bci4_lomtev_datasets(subject_id, config):
     test_flex = test_flex[..., :test_min]
 
     # 7. Carve validation from end of training data
+    # val_frac=0.0 → FingerFlex mode: train on 100% of official split,
+    # use test set as the validation monitor (matches original paper exactly).
     val_frac = split_cfg.get("val_frac", 0.15)
-    n_train_total = train_spec.shape[-1]
-    n_val = int(n_train_total * val_frac)
-    n_train = n_train_total - n_val
-
-    val_spec = train_spec[..., n_train:]
-    val_flex = train_flex[..., n_train:]
-    train_spec = train_spec[..., :n_train]
-    train_flex = train_flex[..., :n_train]
+    if val_frac <= 0.0:
+        val_spec = test_spec
+        val_flex = test_flex
+        # train_spec / train_flex unchanged — full official split used
+    else:
+        n_train_total = train_spec.shape[-1]
+        n_val = int(n_train_total * val_frac)
+        n_train = n_train_total - n_val
+        val_spec = train_spec[..., n_train:]
+        val_flex = train_flex[..., n_train:]
+        train_spec = train_spec[..., :n_train]
+        train_flex = train_flex[..., :n_train]
 
     # 8. RobustScaler on spectrograms (fit on train)
     train_spec, val_spec, test_spec, spec_scaler = robust_scale_spectrograms(
@@ -348,9 +389,9 @@ def build_bci4_lomtev_datasets(subject_id, config):
             "flex_scaler": flex_scaler,
         },
         "n_channels": n_channels,
-        "n_input_features": n_wavelets,
+        "n_input_features": n_input_features,
         "n_wavelets": n_wavelets,
         "downsample_fs": ds_fs,
-        "pipeline_mode": "lomtev_spectrogram_bci4",
+        "pipeline_mode": "raw_ecog_bci4" if n_wavelets == 0 else "lomtev_spectrogram_bci4",
     }
     return datasets

@@ -52,16 +52,37 @@ class Trainer:
         self.total_stride = reduce(lambda a, b: a * b, strides, 1)
 
         # Optimizer
-        self.optimizer = torch.optim.Adam(
-            model.parameters(),
+        opt_type = train_cfg.get("optimizer", "adam").lower()
+        opt_kwargs = dict(
             lr=train_cfg["lr"],
             weight_decay=train_cfg.get("weight_decay", 0.0),
         )
+        if opt_type == "adamw":
+            self.optimizer = torch.optim.AdamW(model.parameters(), **opt_kwargs)
+        else:
+            self.optimizer = torch.optim.Adam(model.parameters(), **opt_kwargs)
 
         # Scheduler
         sched_type = train_cfg.get("scheduler", "reduce_on_plateau")
+        self.sched_type = sched_type
         if sched_type == "none":
             self.scheduler = None
+        elif sched_type == "cosine":
+            warmup_epochs = train_cfg.get("warmup_epochs", 0)
+            T_max = train_cfg["epochs"] - warmup_epochs
+            cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(T_max, 1), eta_min=1e-7,
+            )
+            if warmup_epochs > 0:
+                warmup = torch.optim.lr_scheduler.LinearLR(
+                    self.optimizer, start_factor=0.01, total_iters=warmup_epochs,
+                )
+                self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+                    self.optimizer, schedulers=[warmup, cosine],
+                    milestones=[warmup_epochs],
+                )
+            else:
+                self.scheduler = cosine
         else:
             self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 self.optimizer, mode="min",
@@ -202,7 +223,10 @@ class Trainer:
             )
 
             if self.scheduler is not None:
-                self.scheduler.step(val_loss)
+                if self.sched_type == "reduce_on_plateau":
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
 
             elapsed = time.time() - t_start
             lr = self.optimizer.param_groups[0]["lr"]

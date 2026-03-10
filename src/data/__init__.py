@@ -9,7 +9,7 @@ from src.data.dataset import build_datasets
 from src.data.dataset_lomtev import build_lomtev_datasets, build_bci4_lomtev_datasets
 
 
-SPECTROGRAM_MODELS = {"unet_lomtev", "tcn"}
+SPECTROGRAM_MODELS = {"unet_lomtev", "tcn", "transformer", "hybrid_transformer", "nested_unet", "dtcnet"}
 
 
 def build_data(config):
