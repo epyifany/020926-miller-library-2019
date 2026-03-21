@@ -1,0 +1,39 @@
+Encoder Path (blue solid arrows, left to right/downward)
+
+Input → 32: The input feeds into the first encoder block (32 features).
+32 → 64 (Encoder_1): The 32-feature block encodes down to a 64-feature block.
+64 → 128 (Encoder_2): The 64-feature block encodes down to a 128-feature block.
+128 → 256 (Encoder_3): The 128-feature block encodes down to the deepest 256-feature block (the bottleneck).
+
+
+Decoder Path (orange solid arrows, upward/right)
+
+256 → 128 (Decoder_4): The bottleneck decodes up to 128 features.
+128 → 256 (Decoder_5): Decodes up to 256 features (mid-level).
+128 → 192 (Decoder_6): Decodes up to 192 features (upper-mid level).
+64 → 128 (Decoder_3): Decodes up to 128 features.
+64 → 128 (Decoder_1 & Decoder_2): Lower decoder blocks feed upward.
+
+
+Skip Connections (blue dashed arrows)
+
+Skip Connections (blue dashed arrows):
+Top row:
+
+32 → 64: From the first feature block forward to the top-level 64 block.
+64 → 96: From the top-level 64 block forward to the 96 block.
+96 → 128: From the 96 block forward to the final 128 block before Output.
+
+Second row:
+4. 64 → 128 (Decoder_1 → Decoder_3): From the left second-row decoder forward to the mid second-row decoder.
+5. 128 → 192 (Decoder_3 → Decoder_6): From the mid second-row decoder forward to the right second-row decoder.
+Third row:
+6. 128 → 256 (Decoder_2 → Decoder_5): From the left third-row decoder forward to the right third-row decoder.
+
+
+Prediction (red solid arrow)
+
+128 → Output: The final 128-feature decoder block connects to the Output (prediction).
+
+
+Summary of flow: The network encodes the input progressively deeper (32→64→128→256), then decodes back up while receiving skip connections from the corresponding encoder levels, ultimately producing a prediction from the 128-feature top-level decoder.

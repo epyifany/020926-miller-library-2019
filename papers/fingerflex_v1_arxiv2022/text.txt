@@ -1,0 +1,934 @@
+============================================================
+Page 1
+============================================================
+FingerFlex: Inferring Finger Trajectories from ECoG signals
+Vladislav Lomtev,12 Alexander Kovalev, 2 Alexey Timchenko 34
+1 Bauman Moscow State Technical University, Moscow, Russia
+2 ALVI Labs
+3 Brain Dynamics Group, Higher School of Economics, Moscow, Russia
+4 University of Tuebingen, Tuebingen, Germany
+vladlomtev@gmail.com, koval.alvi@gmail.com, aleksejs.timcenko@gmail.com
+Abstract
+Motor brain-computer interface (BCI) development relies
+critically on neural time series decoding algorithms. Recent
+advances in deep learning architectures allow for automatic
+feature selection to approximate higher-order dependencies
+in data. This article presents the FingerFlex model - a con-
+volutional encoder-decoder architecture adapted for ﬁnger
+movement regression on electrocorticographic (ECoG) brain
+data. State-of-the-art performance was achieved on a pub-
+licly available BCI competition IV dataset 4 with a correla-
+tion coefﬁcient between true and predicted trajectories up to
+0.74. The presented method provides the opportunity for de-
+veloping fully-functional high-precision cortical motor brain-
+computer interfaces.
+Introduction
+Brain-computer interface
+One of the promising rehabilitation tools for people with dis-
+abilities is the brain-computer interface (BCI) (Lebedev and
+Nicolelis 2006; Bamdad, Zarshenas, and Auais 2015; Yuan
+and He 2014). In general, developing a functioning BCI in-
+volves interpreting neural signals to extract relevant infor-
+mation from the brain. The extracted features, i.e. control
+parameters can be used in the restoration of the lost func-
+tions and ability augmentation via controlling external de-
+vices. Speciﬁcally, motor BCIs aim to decode movement-
+related information in the sensory-motor cortex into mean-
+ingful behavioral patterns, such as joint movement or ﬁnger
+ﬂexion (Tam et al. 2019; Volkova et al. 2019).
+Recording of the neural activity
+Brain activity is analyzed using electrophysiological meth-
+ods measuring single neuron or population level electric po-
+tentials. Most methods allowing to capture spiking activ-
+ity, such as optogenetics, single-unit and multi-unit record-
+ings are highly-invasive. At the same time, population level
+recording tools, such as electroencephalogram (EEG) and
+Copyright © 2022, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+Preprint. Under review
+magnetoencephalogram (MEG) require no surgical inter-
+vention, albeit lack spacial resolution due to a voltage leak-
+age in the human scalp and movement-related artifacts
+(Neil Cufﬁn and Cohen 1979; H¨am¨al¨ainen et al. 1993; Jack-
+son and Bolger 2014). The electrocorticogram (ECoG) used
+in this study lies in between these methods, estimated to reg-
+ister localized activity of 105 neurons on the cortical surface
+(Engel et al. 2005). ECoG electrodes are placed over the sur-
+face of the cortex with approximately 1 cm inter-electrode
+distance. Electrocorticogram provides higher spatial resolu-
+tion and superior signal quality compared to EEG and MEG
+with a tradeoff of portability and invasiveness.
+Movement correlates in the human brain
+The primary brain area involved in the movement process-
+ing is primary motor cortex (PMC) (Kakei, Hoffman, and
+Strick 1999). The adjacent brain areas - supplementary mo-
+tor area (SMA) and somatosensory cortex take part into mo-
+tor planning and receive peripheral inputs on the body posi-
+tion and environment (Tam et al. 2019). Planning and exe-
+cuting motor programs change the activity of single neurons
+in the cortical sheet of the motor areas (Kakei, Hoffman, and
+Strick 1999). Spiking activity in a synchronized neuronal
+population, in turn, contributes to the change in local ﬁeld
+potentials registered via surface electrodes (Buzs´aki, Anas-
+tassiou, and Koch 2012). Despite the lack of an exact area-
+to-muscle correspondence in the motor cortex, overlapping
+regions associated with different muscle groups and even
+ﬁngers can be distinguished (Schieber 2001; Marjaninejad,
+Taherian, and Valero-Cuevas 2017; Georgopoulos and Car-
+penter 2015).
+Another feature of population activity in the cortex is that
+its local ﬁeld potential comprises a set of independent oscil-
+latory processes (Buzs´aki and Draguhn 2004). It was shown
+that changes in alpha band (8-13 Hz) power, also known
+as mu-rhythm, beta (13-35 Hz), gamma (35-100 Hz) and
+high-gamma (100-250 Hz) correlate signiﬁcantly with on-
+going movement patterns (Tam et al. 2019; Marjaninejad,
+Taherian, and Valero-Cuevas 2017). It is thus possible to use
+frequency-decomposed or time-frequency represented sig-
+nal instead of raw time series data.
+The primary purpose of this study is to improve existing
+solutions for decoding a continuous ﬁnger trajectory based
+solely on ECoG-registered brain oscillatory patterns in the
+arXiv:2211.01960v2  [q-bio.NC]  25 Apr 2023
+
+
+============================================================
+Page 2
+============================================================
+sensorimotor cortex.
+Related work
+While some studies concentrated on classifying ﬁnger acti-
+vations (Hotson et al. 2016; Onaran, Ince, and Cetin 2011;
+Yao and Shoaran 2019), the others predicted hand transla-
+tions (Pistohl et al. 2008; Nakanishi et al. 2013; Bundy et al.
+2016; ´Sliwowski et al. 2022) and gestures (Pan et al. 2018;
+Branco et al. 2017), numerous approaches were presented
+for solving ﬁnger trajectory prediction task.
+Liang and Bougrain (2012) and Flamary (2012) presented
+the ﬁrst attempts to decode one-dimensional ﬁnger ﬂex-
+ions on the publicly available BCI Competition dataset IV
+(Schalk et al. 2007). The former study employed switching
+linear models, while the latter - linear regression with rigor-
+ous feature selection, which allowed to win the competition.
+Nakanishi et al. (2014) used sparsed linear regression on fre-
+quency band decomposed signal achieving comparable re-
+sults both on the BCI competition dataset and data gathered
+by their team. With the advancement of deep learning (Le-
+Cun, Bengio, and Hinton 2015) techniques over the follow-
+ing years, neural network approaches were more frequently
+used in consequent studies. For example, Xie, Schwartz, and
+Prasad (2018) used long short-term memory based (Hochre-
+iter and Schmidhuber 1997) architecture to decode ﬁnger
+trajectory. Jubien et al. (2019) compared different conven-
+tional machine learning methods with artiﬁcial neural net-
+work approaches on the same task to conclude that deep
+learning solves the task with higher accuracy. The method
+developed by Frey et al. (2021) presented the opportunity
+for developing a generalized decoder for neural data yielding
+high performance over a variety of tasks including ﬁnger tra-
+jectory regression over the ECoG data. The attempt to build
+an interpretable convolutional neural network was made by
+Petrosyan et al. (2021), which is highly relevant for neuro-
+science research on details of motor encoding in the human
+brain. Lastly, a new type of features based on Riemann ge-
+ometry (Congedo, Barachant, and Bhatia 2017) was intro-
+duced in the ﬁnger movement decoding task by Yao, Zhu,
+and Shoaran (2022) used consequently with linear discrimi-
+nators and support vector machine (SVM) regressors.
+The novelty of this work is primarily addressed by the
+use of different decoding paradigm based on the encoder-
+decoder architecture, which transforms feature time series
+into a target time series through a set of convolutions, decon-
+volutions, and skip-connections. Our research aims to prove
+this approach can outperform existing conventional machine
+learning solutions based on thorough feature extraction, as
+well as deep learning models implemented by the other re-
+search teams in a ﬁnger ﬂexion decoding task.
+Methods
+Dataset
+The primary dataset for training the model was the BCI com-
+petition IV dataset 4 (Schalk et al. 2007). The dataset con-
+tains electrocorticographic recordings of three anonymous
+patients with corresponding ﬁnger movement information,
+represented as a one-dimensional coordinate denoting the
+ﬁnger fold. The recording grids consist of 48-64 electrodes
+evenly distributed in grids of 6x8, 8x8, and other shapes.
+The authors of a dataset imposed a limitation on ECoG elec-
+trode distribution information. The channels were shufﬂed
+beforehand and the electrode positions relative to the brain
+were not provided either. ECoG was recorded at a sampling
+frequency of 1000 Hertz, while ﬁnger movements were sam-
+pled at 25 Hz with a data glove.
+The subjects were instructed to move a particular ﬁnger
+after a cue, which was presented as a corresponding word
+(e.g., ”thumb”) on a computer monitor. Each cue lasted for
+two seconds and was followed by a two-second resting pe-
+riod during which the screen was blank. More details on the
+experimental procedure and recording setup can be found in
+the dataset description (Miller and Schalk 2008).
+Data preprocessing and feature extraction
+Data preprocessing can be divided into two parts: pre-
+processing of ECoG signals and preprocessing of the ﬁn-
+ger movement data (Figure 1). The ECoG preprocessing
+pipeline consisted of the following steps. Firstly, data stan-
+dardization and subtraction of the median from each channel
+was performed. Then, band-pass and band-stop ﬁlters were
+used to ﬁlter frequencies in the range of 40 to 300 Hz and re-
+move the power grid frequency of 50 Hz and its harmonics.
+The frequency range from 40 to 300 Hz constitutes gamma
+and high-gamma components of the local ﬁeld potential sig-
+nal, which were chosen as the main predictors for the task.
+Standartization and channel
+median substraction
+Bandpass (40-300 Hz) and 50 Hz
+harmonics filtering
+Convolution with Morlet wavelets 
+Downsampling from 1000 Hz to 100 Hz
+via decimation
+Scaling of the obtained features
+via RobustScaler
+ECoG data processing
+pipeline
+Multichannel ECoG
+data
+Bicubic interpolation upsampling
+(from 40 Hz to 100 Hz)
+Fingerflex data processing
+pipeline
+Fingerflex
+data
+Signal shift by delay hyperparameter
+MinMax scaling
+Processed
+time-frequency
+features
+Processed
+fingerflex
+data
+Figure 1: ECoG and ﬁnger motion data processing pipeline
+As a method of explicit extraction of time-frequency rep-
+resentation of the signal, the convolution with complex Mor-
+let wavelets was chosen. Wavelet decomposition allows cap-
+turing speciﬁc frequency components of a signal change in
+time. Forty wavelet kernels were created with base frequen-
+cies ranging from 40 to 300 Hz evenly spaced on a logarith-
+mic scale. The convolution operation of selected wavelets
+with each channel was performed and the amplitudes of
+resulting analytical signals were extracted as an absolute
+
+
+============================================================
+Page 3
+============================================================
+value of a complex-valued vector. As a result of this oper-
+ation for each ECoG channel, a spectrogram is obtained of
+shape: (number of wavelets, number of time points in a time
+window). Then, the sampling rate was then lowered from
+1000 Hz to 100 Hz by decimation for the correspondence
+to a motion capture time series. Next, the obtained time-
+frequency envelopes were standardized with respect to 0.1
+and 0.9 quantiles, and the values not falling within this range
+were then taken equal to the corresponding scaler boundary
+values to combat outliers. This operation was done using
+the RobustScaler class from the scikit-learn library, which
+was ﬁtted on the training set and applied to both the training
+and validation sets. Lastly, to account for the delay between
+brain activity and actual movements, the forward shift of
+ECoG data with respect to the ﬁnger movement time series
+was introduced. The exact value of the shift can be regarded
+as a tunable hyperparameter within the relevant physiologi-
+cal range: 0 −200ms.
+The preprocessing of ﬁnger movement data consisted of
+two steps. First, to keep the sampling frequencies of ﬁnger
+movements and time-frequency time series matched, upsam-
+pling from 25 Hz to 100Hz using bicubic interpolation was
+conducted. Second, MinMax scaling was applied.
+The model architecture
+The ﬁnal model is designed in the same way as the convolu-
+tional autoencoder with a set of additions and improvements.
+The architecture of the model is depicted on Figure 2
+As the input, the model takes a window of ECoG features
+of arbitrary length and returns the corresponding window
+of predicted movements; however, during the training pro-
+cess, the length of such a window is ﬁxed and equal to 256
+time points (2.56 secs). Initially, the model performs dimen-
+sionality reduction using a regular convolutional layer. Next
+comes a set of convolutional encoder layers. Each encoder
+layer consists of a 1D convolution layer, layer normaliza-
+tion, GeLU activation function, dropout layer, and maximum
+pooling with stride equals 2. This part of the model is re-
+sponsible for encoding the features of the time window frag-
+ments. Encoder layer architecture is inspired by wav2vec ar-
+chitecture (Schneider et al. 2019).
+This is followed by a symmetrical set of convolutional
+decoder layers, each of which uses for further prediction not
+only information from the previous layer, but also from the
+symmetrical encoder layer. In other words, skip connections
+like those of the UNet model (Ronneberger, Fischer, and
+Brox 2015) were added. Skip connections make it possible
+to use for prediction not only the generalized representation
+in the latent space obtained by the encoder, but also the orig-
+inal local features, which ultimately increases the accuracy
+of the ﬁnal model. The model is completed by a 1×1 convo-
+lution layer that uses the resulting set of features from each
+point in time to predict the coordinates of each of the ﬁve
+ﬁngers at that point.
+Training details
+The BCI competition IV dataset 4 was already divided into
+training and validation sets, the recording of each of the
+three patients was divided into 2 parts, where the ﬁrst part
+of 6.5 minutes duration constitutes training subset and the
+second part of 3.5 minutes long constitutes validation data
+subset. The model was trained and optimized using only
+the training subset, while the validation set was used for
+the performance measurement and hyperparameter adjust-
+ment. Due to lack of alignment of electrode grid shapes be-
+tween subjects and intentional mixing of electrodes done by
+the dataset creators, the model was trained for each subject
+individually. Note that overﬁtting due to a hyperparameter
+search using the validation set was addressed by perform-
+ing ablation study using only one subject provided in the
+dataset. The same model was trained on the other patients
+without any additional hyperparameter adjustment.
+Loss function
+The loss function was chosen as the half
+sum of the mean squared error (MSE) and the mean cosine
+distance. Since the metric of the ﬁnal score is correlation,
+it is essential to include it in the loss for training process.
+However, the correlation itself is not an optimal optimiza-
+tion criterion when working with small windows, since it
+is too sensitive to insigniﬁcant noise within this window in
+those cases when there is no movenet. Therefore, instead of
+a correlation loss, it was decided to use the cosine distance.
+The ablation study was conducted to test whether the combi-
+nation of MSE and cosine similarity metrics performed bet-
+ter than any of those metrics alone. Nevertheless, due to the
+evaluation criteria at BCI competition IV, correlation coefﬁ-
+cient (CC) metric was used to evaluate and compare model
+performance.
+Hyperparameters
+The number of features on each of the
+layers of the encoder as a result of the experiments was taken
+equal to (32, 32, 64, 64, 128, 128). The number of features
+in the decoder layers is symmetrical with respect to the bot-
+tleneck. The stride size was taken equal to 2 to reduce the
+sampling rate of the original window as gradually as possi-
+ble, which allows better extraction of common features.
+The learning rate was picked according to the Pytorch
+Lightning library’s automatic learning rate ﬁnder recom-
+mendation and was set ﬁxed to 8.4 · 10−5.
+As was previously mentioned, wavelet number, loss func-
+tion combination coefﬁcients and the delay between ECoG
+and hand movement time series can be considered as the
+tunable hyperparameters.
+Results
+Model development
+Every subsequently improved model was trained for 30
+epochs. Model weights trained during the epoch preced-
+ing overﬁtting of the model were chosen for inference. The
+model reﬁnement took several important steps to achieve the
+ﬁnal performance.
+Architecture reﬁnement
+Baseline encoder-decoder ar-
+chitecture, trained on unscaled absolute values of wavelet-
+convoluted signals, yielded average correlation value of 0.2
+on the ﬁrst subject (Table 1). However, adding data scal-
+ing both for ECoG features and ﬁnger movements improved
+results using the same architecture by more than two-fold,
+to 0.45 on average on the ﬁrst subject. It can be speculated
+
+
+============================================================
+Page 4
+============================================================
+N features
+32
+32
+64
+64
+128
+128
+128
+128
+64 64
+64
+64
+32 32
+32 32
+5
+Conv
+Conv, GELU, Dropout, MaxPool
+Conv, GELU, Dropout, Upsample
+Skip connection
+ECoG
+Fingers
+Figure 2: FingerFlex model architecture
+that this win in performance is due to highly variable abso-
+lute values of the time-frequency representation of the sig-
+nal. The electrophysiological recordings consistently show
+a 1/f relationship between signal spectral power and a cor-
+responding frequency (Buzs´aki and Draguhn 2004), leading
+to a multiple-fold difference between signal power in highly
+distinct frequency bands. A modiﬁcation of the encoder-
+decoder architecture parameters, which are mainly a number
+of features in each layer and the number of layers allowed to
+increase the average correlation coefﬁcient further to 0.55.
+The ﬁnal model architecture is shown in Figure 2. Then the
+use of wavelets only from the gamma frequency band and
+an increase in their number up to 40 also led to an improve-
+ment in the results to an average correlation value of 0.6.
+Finally, skip connections were added, which increased the
+mean correlation coefﬁcient to 0.66.
+Table 1: Model development steps with corresponding per-
+formance obtained on the validation set.
+Model improvement step
+Mean correlation
+Baseline model
+0.2
++ Feature scaling
+0.45
++ Architecture improvement
+0.55
++ Frequency range adjustment
+0.59
++ Optimizing number of wavelets
+0.6
++ Adding skip-connections
+0.66
+Hyperparameter tuning
+Then an ablation study was per-
+formed to calculate the optimal value of the delay hyper-
+parameter between the ECoG signal and the predicted mo-
+tion. The baseline delay chosen as the initial one was 20 ms,
+and as the consequent experiments showed that for the built
+model the value of delay is not crucial, as long as it is within
+0 −200ms range. Therefore, the ﬁnal shift value between
+ECoG and ﬁnger motion time series was kept at 20 ms.
+Another ablation study was conducted to test whether
+the use of a combined loss function - the sum of cosine
+distance and MSE is empirically justiﬁed. Cosine distance,
+when used alone yielded a correlation value of 0.44, which
+is a worse result than that of MSE (0.64). However, using a
+combination of cosine distance and MSE increases the cor-
+relation by an average of 0.02 compared to the regular MSE,
+summing up to 0.66.
+Decoding performance
+Finger movement inference, carried out on three subjects
+presented in the BCI Competition IV dataset 4 showed the
+following results: 0.66 average correlation on the ﬁrst sub-
+ject, 0.62 on the second and 0.74 on the third (see Table
+3). Recall that each patient had its own model trained, how-
+ever, hyperparameter tuning was carried out only using the
+ﬁrst subject. The mean correlation coefﬁcient across all sub-
+jects is 0.67. Correlation values for different ﬁngers are in
+the range of 0.6 −0.75 for the ﬁrst subject, 0.53 −0.73 for
+the second and 0.68 −0.78 for the third.
+Model veriﬁcation on a different dataset
+To check model stability across datasets, the built model was
+also tested on Stanford dataset (Miller 2019). Since the data
+representation in this dataset was the same as in BCI Compe-
+tition IV dataset 4, the entire data processing pipeline (Fig-
+ure 1) remained unchanged.
+The feature processing, hyperparameters and model archi-
+tecture were ﬁxed. The obtained results are represented in
+the Table 4. While there are subjects, which the model fails
+to recognize ﬁnger movements with correlations of 0.2−0.4,
+there are patients, who have mean correlation coefﬁcients
+between predicted and actual ﬁnger movements in the range
+
+
+============================================================
+Page 5
+============================================================
+Table 2: Performance comparison on works solving BCI Competition IV dataset 4 ﬁnger trajectory decoding task
+Mean CC by subject
+Method
+S1
+S2
+S3
+Average
+Flamary (2012) - BCI Competition 2nd place
+0.48
+0.24
+0.56
+0.43
+Liang and Bougrain (2012) - BCI Competition winner
+0.45
+0.39
+0.59
+0.48
+Xie et al. (2018) - LSTM
+0.56
+0.41
+0.58
+0.52
+Frey et al. (2021) - Multi-purpose CNN
+N/A
+N/A
+N/A
+0.52
+Petrosyan et al. (2021) - Interpretable CNN
+0.45
+0.34
+0.56
+0.45
+Yao et al. (2022) - lightGBM
+0.52
+0.47
+0.61
+0.53
+Our solution (FingerFlex)
+0.66
+0.62
+0.74
+0.67
+Table 3: FingerFlex model performance on the BCI com-
+petition IV dataset 4. Correlation coefﬁcients are calculated
+separately for each subject and ﬁnger using the provided val-
+idation set.
+Correlation coefﬁcient
+Subject
+Thumb Index
+Middle Ring
+Little
+Avg.
+S1
+0.66
+0.75
+0.64
+0.66
+0.6
+0.66
+S2
+0.66
+0.73
+0.53
+0.63
+0.54
+0.62
+S3
+0.78
+0.68
+0.68
+0.78
+0.76
+0.74
+Average
+0.7
+0.72
+0.62
+0.69
+0.63
+0.67
+Table 4: FingerFlex model performance (correlation coef-
+ﬁcients) on the ECoG ﬁnger motion dataset provided by
+Miller (2019).
+Correlation coefﬁcient
+Subject
+Thumb Index
+Middle Ring
+Little
+Avg.
+bs
+0.65
+0.66
+0.45
+0.53
+0.44
+0.55
+cc
+0.76
+0.7
+0.61
+0.76
+0.73
+0.71
+zt
+0.59
+0.73
+0.68
+0.62
+0.53
+0.63
+jp
+0.68
+0.67
+0.31
+0.65
+0.53
+0.57
+ht
+0.31
+0.32
+0.34
+0.36
+0.36
+0.34
+mv
+0.42
+0.85
+0.42
+0.40
+0.71
+0.56
+wc
+0.45
+0.63
+0.42
+0.27
+0.31
+0.42
+wm
+0.33
+0.08
+0.25
+0.32
+0.06
+0.22
+jc
+0.65
+0.37
+0.32
+0.43
+0.37
+0.43
+of 0.5−0.7. The low performance on some patients could be
+attributed to irrelevant positioning of the ECoG grid with re-
+gards to brain areas mostly involved during movement plan-
+ning and execution.
+Discussion
+Contribution
+Our approach shows great promise in developing high-
+precision decoders of neural signals related to movements
+for use in the brain-computer interface. The proposed model
+signiﬁcantly outperforms the winner of the BCI competition
+IV with a mean correlation value of approximately 0.67. It
+also improves greatly the current state-of-the-art results of
+other research groups solving the ﬁnger trajectory decoding
+task (Table 2). Moreover, FingerFlex successfully decoded
+ﬁnger trajectories using the other dataset without any addi-
+tional hyperparameter search (Table 4)
+The method developed in this study stands on several
+important ideas and improvements. First of all, the time-
+frequency feature selection choice was crucial to capture
+ﬁne changes in different frequency components of the brain
+signals responsible for ﬁnger movements. Secondly, the hy-
+brid encoder-decoder architecture with skip connections was
+employed for the ﬁrst time for the ECoG decoding task. In
+addition, the introduction of a new loss function to a con-
+ventional MSE further improved regression results. Lastly,
+the physiologically relevant hyperparameters, such as time
+delay between ﬁnger trajectory and ECoG time series and
+frequency range for wavelet convolution alongside with con-
+ventional hyperparameters, such as learning rate and model
+depth, are stable across participants and datasets. These hy-
+perparameters can be ﬁxed once providing sufﬁcient perfor-
+mance for the task.
+There are also several advantages inherent in the sug-
+gested approach. Firstly, our method does not require train-
+ing separate decoders for resting and moving states, as
+that was done in Elgharabawy and Wahed (2016) and Fla-
+mary (2012). It captures both changes in ﬁnger coordinate
+during movement periods and during resting periods with-
+out switching and adding any additional information. Sec-
+ondly, the model is relatively lightweight, having only about
+600000 parameters, which potentially allows to use it in real-
+time inference applications. Furthermore, the method does
+not rely on ECoG data, which follows the movement in time,
+i.e. it makes predictions based only on a current time win-
+dow, not taking into account future and preceding ones. This
+feature further facilitates real-time deployment. Lastly, the
+length of the time window can be arbitrary due to the nature
+of convolution operation, thus providing further ﬂexibility
+for other decoding solutions.
+Limitations and potential improvements
+The unequal electrode placement between subjects and un-
+certainty about electrode positioning relative to the brain
+limit the possible generalization approaches. However, the
+proposed method is highly suitable for individualized train-
+
+
+============================================================
+Page 6
+============================================================
+Thumb
+true
+prediction
+Index
+Middle
+Ring
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0
+22.5
+Time (s)
+Little
+Figure 3: An example of true and decoded ﬁnger trajectories time series. The data segment for visualization was taken from the
+validation set
+ing. One of the strongest arguments for that is that only 6.5
+minutes of recording is sufﬁcient to achieve a signiﬁcant per-
+formance on decoding ﬁne movements.
+One of the further research directions is implementing
+transfer learning across participants (Wan et al. 2021). If
+electrode positions and subjects’ magnetic-resonance imag-
+ing scans are available, it becomes possible to use source
+reconstruction approaches (H¨am¨al¨ainen et al. 1993; Chen,
+Yao, and Hudson 2002), i.e. solving the ”inverse problem”.
+This allows making a transition from individualized brain
+surface spatial patterns (electrode space) to standardized
+cortical activations (source space). This is essential for de-
+veloping cross-subjects solutions and training a network on
+the larger amounts of data gathered in different experimen-
+tal settings and across participants. Another possible way of
+solving the lack of correspondence of electrode location be-
+tween subjects is to use separate feature extractors for each
+subject inferring generalized features suitable for transfer
+learning like was done in the work of Peterson et al. (2021).
+Besides transfer learning, a possible advancement could
+be adding interpretable blocks to enhance understanding
+of the data. An important step in that direction was made
+by Petrosyan et al. (2021) and Sturm et al. (2016), and
+while adding interpretable blocks might worsen model per-
+formance, research in this direction could provide useful in-
+sights on motor encoding in the human brain and what fea-
+tures of ECoG signals really matter for the movement pre-
+diction.
+Finally, an important step would be to omit any manual
+feature extraction of the time series data allowing the neu-
+ral network to learn to extract relevant features for the task
+itself. Time-frequency methods have their limitations and
+their use imply increasing a number hyperparameters, which
+is not always favorable. Temporal convolutions are by far the
+most relevant way to implement automatic feature extraction
+and this approach also works well, as was shown by Li et al.
+(2021b), Li et al. (2021a) and Peterson et al. (2021). The
+possible downside of this approach would be the increased
+demand for lengthy data due to the increased number of pa-
+rameters in the network, and gathering more data is often im-
+possible in clinical settings of neurophysiological research.
+Conclusion
+The present study developed a novel deep learning approach
+for decoding ﬁnger ﬂexions based on oscillatory activity on
+the ECoG channels. With the use of convolutional encoder-
+decoder architecture with skip-connections, the performance
+on the trajectory regression task was signiﬁcantly improved
+compared to the existing solutions using the BCI competi-
+tion IV dataset 4. The proposed model can potentially be
+used for real-time inference of ﬁnger ﬂexions. This research
+shows promise for developing fast, functional, and precise
+neuroprosthetic devices.
+References
+Bamdad, M.; Zarshenas, H.; and Auais, M. A. 2015. Ap-
+plication of BCI Systems in Neurorehabilitation: A Scoping
+Review. Disability and Rehabilitation: Assistive Technol-
+ogy, 10(5): 355–364.
+
+
+============================================================
+Page 7
+============================================================
+Branco, M. P.; Freudenburg, Z. V.; Aarnoutse, E. J.; Bleich-
+ner, M. G.; Vansteensel, M. J.; and Ramsey, N. F. 2017. De-
+coding Hand Gestures from Primary Somatosensory Cortex
+Using High-Density ECoG. NeuroImage, 147: 130–142.
+Bundy, D. T.; Pahwa, M.; Szrama, N.; and Leuthardt, E. C.
+2016. Decoding Three-Dimensional Reaching Movements
+Using Electrocorticographic Signals in Humans. Journal of
+Neural Engineering, 13(2): 026021.
+Buzs´aki, G.; Anastassiou, C. A.; and Koch, C. 2012. The
+Origin of Extracellular Fields and Currents — EEG, ECoG,
+LFP and Spikes. Nature Reviews Neuroscience, 13(6): 407–
+420.
+Buzs´aki, G.; and Draguhn, A. 2004. Neuronal Oscillations
+in Cortical Networks. Science, 304(5679): 1926–1929.
+Chen, J.; Yao, K.; and Hudson, R. 2002. Source Localiza-
+tion and Beamforming. IEEE Signal Processing Magazine,
+19(2): 30–39.
+Congedo, M.; Barachant, A.; and Bhatia, R. 2017. Rieman-
+nian Geometry for EEG-based Brain-Computer Interfaces;
+a Primer and a Review. Brain-Computer Interfaces, 4(3):
+155–174.
+Elgharabawy, A.; and Wahed, M. A. 2016. Decoding of Fin-
+ger Movement Using Kinematic Model Classiﬁcation and
+Regression Model Switching. In 2016 8th Cairo Interna-
+tional Biomedical Engineering Conference (CIBEC), 84–89.
+Engel, A. K.; Moll, C. K. E.; Fried, I.; and Ojemann, G. A.
+2005. Invasive Recordings from the Human Brain: Clinical
+Insights and Beyond. Nature Reviews Neuroscience, 6(1):
+35–47.
+Flamary, R. 2012. Decoding Finger Movements from ECoG
+Signals Using Switching Linear Models. Frontiers in Neu-
+roscience, 9.
+Frey, M.; Tanni, S.; Perrodin, C.; O’Leary, A.; Nau, M.;
+Kelly, J.; Banino, A.; Bendor, D.; Lefort, J.; Doeller, C. F.;
+and Barry, C. 2021. Interpreting Wide-Band Neural Activity
+Using Convolutional Neural Networks. eLife, 10: e66551.
+Georgopoulos, A. P.; and Carpenter, A. F. 2015. Coding of
+Movements in the Motor Cortex. Current Opinion in Neu-
+robiology, 33: 34–39.
+H¨am¨al¨ainen, M.; Hari, R.; Ilmoniemi, R. J.; Knuutila, J.;
+and Lounasmaa, O. V. 1993. Magnetoencephalography—
+Theory, Instrumentation, and Applications to Noninvasive
+Studies of the Working Human Brain. Reviews of Modern
+Physics, 65(2): 413–497.
+Hochreiter, S.; and Schmidhuber, J. 1997. Long Short-Term
+Memory. Neural Computation, 9(8): 1735–1780.
+Hotson, G.; McMullen, D. P.; Fifer, M. S.; Johannes, M. S.;
+Katyal, K. D.; Para, M. P.; Armiger, R.; Anderson, W. S.;
+Thakor, N. V.; Wester, B. A.; and Crone, N. E. 2016. In-
+dividual Finger Control of a Modular Prosthetic Limb Us-
+ing High-Density Electrocorticography in a Human Subject.
+Journal of Neural Engineering, 13(2): 026017.
+Jackson, A. F.; and Bolger, D. J. 2014. The Neurophysio-
+logical Bases of EEG and EEG Measurement: A Review for
+the Rest of Us. Psychophysiology, 51(11): 1061–1071.
+Jubien, G.; Schaeffer, M.-C.; Bonnet, S.; and Aksenova, T.
+2019. Decoding of Finger Activation from ECoG Data: A
+Comparative Study. In 2019 International Joint Conference
+on Neural Networks (IJCNN), 1–8.
+Kakei, S.; Hoffman, D. S.; and Strick, P. L. 1999. Muscle
+and Movement Representations in the Primary Motor Cor-
+tex. Science, 285(5436): 2136–2139.
+Lebedev,
+M.
+A.;
+and
+Nicolelis,
+M.
+A.
+L.
+2006.
+Brain–Machine
+Interfaces:
+Past,
+Present
+and
+Future.
+Trends in Neurosciences, 29(9): 536–546.
+LeCun, Y.; Bengio, Y.; and Hinton, G. 2015. Deep Learning.
+Nature, 521(7553): 436–444.
+Li, F.; Chao, W.; Li, Y.; Fu, B.; Ji, Y.; Wu, H.; and Shi,
+G. 2021a. Decoding Imagined Speech from EEG Signals
+Using Hybrid-Scale Spatial-Temporal Dilated Convolution
+Network. Journal of Neural Engineering, 18(4): 0460c4.
+Li, Y.; Guo, L.; Liu, Y.; Liu, J.; and Meng, F. 2021b. A
+Temporal-Spectral-Based Squeeze-and- Excitation Feature
+Fusion Network for Motor Imagery EEG Decoding. IEEE
+Transactions on Neural Systems and Rehabilitation Engi-
+neering, 29: 1534–1545.
+Liang, N.; and Bougrain, L. 2012. Decoding Finger Flexion
+from Band-Speciﬁc ECoG Signals in Humans. Frontiers in
+Neuroscience, 6.
+Marjaninejad, A.; Taherian, B.; and Valero-Cuevas, F. J.
+2017.
+Finger Movements Are Mainly Represented by a
+Linear Transformation of Energy in Band-Speciﬁc ECoG
+Signals.
+In 2017 39th Annual International Conference
+of the IEEE Engineering in Medicine and Biology Society
+(EMBC), 986–989.
+Miller, K. J. 2019.
+A Library of Human Electrocortico-
+graphic Data and Analyses.
+Nature Human Behaviour,
+3(11): 1225–1235.
+Miller, K. J.; and Schalk, G. 2008. Prediction of Finger Flex-
+ion 4th Brain-Computer Interface Data Competition. 3.
+Nakanishi, Y.; Yanagisawa, T.; Shin, D.; Chen, C.; Kambara,
+H.; Yoshimura, N.; Fukuma, R.; Kishima, H.; Hirata, M.;
+and Koike, Y. 2014.
+Decoding Fingertip Trajectory from
+Electrocorticographic Signals in Humans. Neuroscience Re-
+search, 85: 20–27.
+Nakanishi, Y.; Yanagisawa, T.; Shin, D.; Fukuma, R.; Chen,
+C.; Kambara, H.; Yoshimura, N.; Hirata, M.; Yoshimine, T.;
+and Koike, Y. 2013. Prediction of Three-Dimensional Arm
+Trajectories Based on ECoG Signals Recorded from Human
+Sensorimotor Cortex. PLOS ONE, 8(8): e72085.
+Neil Cufﬁn, B.; and Cohen, D. 1979. Comparison of the
+Magnetoencephalogram and Electroencephalogram. Elec-
+troencephalography and Clinical Neurophysiology, 47(2):
+132–146.
+Onaran, I.; Ince, N. F.; and Cetin, A. E. 2011.
+Classiﬁ-
+cation of Multichannel ECoG Related to Individual Finger
+Movements with Redundant Spatial Projections.
+In 2011
+Annual International Conference of the IEEE Engineering
+in Medicine and Biology Society, 5424–5427.
+Pan, G.; Li, J.-J.; Qi, Y.; Yu, H.; Zhu, J.-M.; Zheng, X.-
+X.; Wang, Y.-M.; and Zhang, S.-M. 2018. Rapid Decoding
+
+
+============================================================
+Page 8
+============================================================
+of Hand Gestures in Electrocorticography Using Recurrent
+Neural Networks. Frontiers in Neuroscience, 12.
+Peterson, S. M.; Steine-Hanson, Z.; Davis, N.; Rao, R. P. N.;
+and Brunton, B. W. 2021. Generalized Neural Decoders for
+Transfer Learning across Participants and Recording Modal-
+ities. Journal of Neural Engineering, 18(2): 026014.
+Petrosyan, A.; Sinkin, M.; Lebedev, M.; and Ossadtchi, A.
+2021.
+Decoding and Interpreting Cortical Signals with a
+Compact Convolutional Neural Network. Journal of Neu-
+ral Engineering, 18(2): 026019.
+Pistohl, T.; Ball, T.; Schulze-Bonhage, A.; Aertsen, A.; and
+Mehring, C. 2008. Prediction of Arm Movement Trajecto-
+ries from ECoG-recordings in Humans. Journal of Neuro-
+science Methods, 167(1): 105–114.
+Ronneberger, O.; Fischer, P.; and Brox, T. 2015.
+U-Net:
+Convolutional Networks for Biomedical Image Segmenta-
+tion. arXiv:1505.04597.
+Schalk, G.; Kubanek, J.; Miller, K. J.; Anderson, N. R.;
+Leuthardt, E. C.; Ojemann, J. G.; Limbrick, D.; Moran, D.;
+Gerhardt, L. A.; and Wolpaw, J. R. 2007. Decoding Two-
+Dimensional Movement Trajectories Using Electrocortico-
+graphic Signals in Humans. 13.
+Schieber, M. H. 2001. Constraints on Somatotopic Organi-
+zation in the Primary Motor Cortex. Journal of Neurophysi-
+ology, 86(5): 2125–2143.
+Schneider, S.; Baevski, A.; Collobert, R.; and Auli, M. 2019.
+Wav2vec: Unsupervised Pre-training for Speech Recogni-
+tion. arXiv:1904.05862.
+´Sliwowski, M.; Martin, M.; Souloumiac, A.; Blanchart, P.;
+and Aksenova, T. 2022.
+Decoding ECoG Signal into 3D
+Hand Translation Using Deep Learning. Journal of Neural
+Engineering, 19(2): 026023.
+Sturm, I.; Lapuschkin, S.; Samek, W.; and M¨uller, K.-R.
+2016. Interpretable Deep Neural Networks for Single-Trial
+EEG Classiﬁcation. Journal of Neuroscience Methods, 274:
+141–145.
+Tam, W.-k.; Wu, T.; Zhao, Q.; Keefer, E.; and Yang, Z. 2019.
+Human Motor Decoding from Neural Signals: A Review.
+BMC Biomedical Engineering, 1(1): 22.
+Volkova, K.; Lebedev, M. A.; Kaplan, A.; and Ossadtchi,
+A. 2019. Decoding Movement From Electrocorticographic
+Activity: A Review. Frontiers in Neuroinformatics, 13: 74.
+Wan, Z.; Yang, R.; Huang, M.; Zeng, N.; and Liu, X. 2021.
+A Review on Transfer Learning in EEG Signal Analysis.
+Neurocomputing, 421: 1–14.
+Xie, Z.; Schwartz, O.; and Prasad, A. 2018. Decoding of
+Finger Trajectory from ECoG Using Deep Learning. Jour-
+nal of Neural Engineering, 15(3): 036009.
+Yao, L.; and Shoaran, M. 2019.
+Enhanced Classiﬁcation
+of Individual Finger Movements with ECoG. In 2019 53rd
+Asilomar Conference on Signals, Systems, and Computers,
+2063–2066.
+Yao, L.; Zhu, B.; and Shoaran, M. 2022. Fast and Accu-
+rate Decoding of Finger Movements from ECoG through
+Riemannian Features and Modern Machine Learning Tech-
+niques. Journal of Neural Engineering, 19(1): 016037.
+Yuan, H.; and He, B. 2014. Brain–Computer Interfaces Us-
+ing Sensorimotor Rhythms: Current State and Future Per-
+spectives. IEEE Transactions on Biomedical Engineering,
+61(5): 1425–1435.

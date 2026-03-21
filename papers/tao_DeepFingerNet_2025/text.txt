@@ -1,0 +1,1271 @@
+============================================================
+Page 1
+============================================================
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+4022112
+DeepFingerNet Predicts Finger Trajectory
+From ECoG Measurements
+Wei Tao , Jianghao Hou , Yi Yang , Xun Chen , Senior Member, IEEE, Tzyy-Ping Jung , Fellow, IEEE,
+and Feng Wan , Senior Member, IEEE
+Abstract—Decoding ﬁne motor movements, such as ﬁnger
+trajectories, from brain signals poses a critical challenge for
+brain-computer
+interface
+(BCI)
+systems,
+particularly
+when
+employing electrocorticography (ECoG) because of its inher-
+ent signal complexity and inter-subject variability. Although
+traditional machine learning and deep learning methods have
+advanced coarse motor control, they often fall short in captur-
+ing and generalizing. To address these limitations, we propose
+DeepFingerNet—a novel architecture based on nested U-Nets
+designed speciﬁcally for ECoG-based ﬁnger trajectory predic-
+tion. DeepFingerNet enhances feature extraction and fusion by
+leveraging nested skip connections, which eﬀectively integrate
+low-level spatial details with high-level abstract representations.
+We employ a hybrid loss function, combining cosine similarity
+and mean squared error (mse), to optimize the direction and mag-
+nitude of the decoded trajectories. Evaluations on two publicly
+available ECoG datasets demonstrate the model’s eﬀectiveness,
+achieving correlation coeﬃcients of 0.69 (a 17% improvement
+over baseline methods) on BCI Competition IV Dataset 4 and
+0.54 (a 5% improvement) on the Stanford University dataset,
+respectively. These results underscore DeepFingerNet’s potential
+to signiﬁcantly improve the reliability and precision of ﬁne
+ﬁnger predictions from ECoG measurements, thereby supporting
+advanced applications in neuroprosthetics and human–machine
+interaction.
+Index Terms—Deep learning, electrocorticography (ECoG),
+ﬁnger trajectory decoding, real-time brain-computer interface
+(BCI), U-Nets.
+I. INTRODUCTION
+B
+RAIN–COMPUTER interfaces (BCIs) have gained sig-
+niﬁcant attention as transformative technologies that
+Received 25 May 2025; revised 20 October 2025; accepted 14 November
+2025. Date of publication 16 December 2025; date of current version 2 January
+2026. This work was supported in part by the National Key Research and
+Development Program of China under Grant 2024YFE0201600, in part by
+the Science and Technology Development Fund, Macau SAR under Grant
+0085/2024/AMJ, in part by the University of Macau under Grant MYRG2022-
+00197-FST, Grant MYRG-GRG2024-00285-FST-UMDF, and Grant MYRG-
+CRG2024-00048-FST-ICI, and in part by Guangdong Basic and Applied Basic
+Research Foundation under Grant 2023A1515010844. The Associate Editor
+coordinating the review process was Dr. Mahdi Saleh. (Corresponding author:
+Feng Wan.)
+Wei Tao, Jianghao Hou, Yi Yang and Feng Wan are with the Department
+of Electrical and Computer Engineering, Faculty of Science and Technology,
+and the Centre for Cognitive and Brain Sciences, Institute of Collaborative
+Innovation, University of Macau, Taipa, Macau (e-mail: yc07466@umac.mo;
+mc35285@umac.mo; yc27932@connect.um.edu.mo; fwan@um.edu.mo).
+Xun Chen is with the Department of Electronic Engineering and Informa-
+tion Science, University of Science and Technology of China, Hefei 230027,
+China (e-mail: xunchen@ustc.edu.cn).
+Tzyy-Ping Jung is with the Institute for Neural Computation, Institute of
+Engineering in Medicine, and the Department of Bioengineering, University of
+California, San Diego, La Jolla, CA 92093 USA (e-mail: tpjung@ucsd.edu).
+This
+article
+has
+supplementary
+downloadable
+material
+available
+at
+https://doi.org/10.1109/TIM.2025.3644562, provided by the authors.
+Digital Object Identiﬁer 10.1109/TIM.2025.3644562
+restore communication and motor control for individuals with
+neurological impairments [1], [2]. By enabling direct com-
+munication between the brain and external devices, BCIs
+oﬀer a novel avenue for individuals with conditions such as
+paralysis or stroke to regain functional abilities [3], allowing
+them to control prosthetic limbs [4], robotic arms [5], or even
+cursors on a computer screen [6]. One of the most promising
+applications of BCIs lies in prosthetics, where precise motor
+intentions are decoded from neural signals to control robotic
+limbs or exoskeletons [7], [8], [9]. However, ﬁne motor move-
+ments prediction, such as individual ﬁnger motions, remains
+challenging due to the intricate nature of neural signals and
+substantial variability across individuals, both of which place
+high demands on the underlying measurement and decoding
+systems.
+Among the various neural recording techniques, electrocor-
+ticography (ECoG) stands out as one of the most promising
+methods due to its high spatial and temporal resolution [10],
+[11], [12]. ECoG oﬀers a more precise measurement of brain
+activity compared to noninvasive techniques such as electroen-
+cephalography (EEG), enabling ﬁner resolution in decoding
+motor intentions [13], [14]. Despite these advantages, the
+complexity of ECoG signals, including their high dimen-
+sionality and subject-speciﬁc variations, creates signiﬁcant
+hurdles in decoding accurate motor commands, particularly
+for ﬁne motor control tasks such as ﬁnger movement detection
+[15]. Furthermore, real-time performance remains challenging
+because the decoding system must achieve high accuracy while
+responding quickly to dynamic changes in motor intentions
+[16]. These challenges highlight the importance of developing
+advanced methods that not only improve decoding accuracy
+but also enhance the robustness and reliability of neural
+signal measurement and processing systems in practical BCI
+applications.
+Traditional ECoG-based motor prediction methods typ-
+ically depend on handcrafted feature extraction combined
+with machine learning classiﬁers [12], [17], [18], [19]. For
+instance, Flamary and Rakotomamonjy [19] applied switched
+linear models in the BCI Competition IV dataset to decode
+ﬁnger trajectories, using ECoG-derived features for internal
+state estimation and predicting ﬁnger movement amplitudes.
+This approach achieved a correlation coeﬃcient of 0.42,
+outperforming a single linear model (0.3). Similarly, Yao et
+al. [17] proposed a method that segments time–frequency
+features from ECoG signals, maps Riemannian features to a
+linear space using matrix logarithms and vectorization, and
+applies them for subsequent trajectory prediction. Among
+several machine learning models tested, LightGBM outper-
+1557-9662 © 2025 IEEE. All rights reserved, including rights for text and data mining, and training of artiﬁcial intelligence and
+similar technologies. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 2
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+formed others, reaching a correlation coeﬃcient of 0.53 on
+the BCI Competition IV dataset. However, both methods
+fail to capture complex temporal dependencies of ECoG
+signals, which are essential to decode subtle motor intentions
+accurately.
+In contrast, deep learning techniques, particularly convo-
+lutional neural networks (CNNs), have emerged as powerful
+tools for ECoG-based decoding because of their ability to learn
+discriminative features from raw signal data automatically.
+CNNs excel at capturing both spatial and temporal patterns
+in high-dimensional ECoG signals, making them ideal for
+ﬁne-motor control tasks like ﬁnger movement decoding. For
+example, Xie et al. [20] integrated CNNs with LSTM networks
+to extract features from ECoG signals and capture their
+dynamic characteristics, producing smoother predictions that
+align more closely with actual ﬁnger trajectories. Similarly,
+Lomtev et al. [21] developed FingerFlex, a hybrid deep-
+learning approach to decode ﬁnger movements, achieving
+signiﬁcant improvements in accuracy. In 2024, Kuo et al. [22]
+introduced a 3D-CNN model that analyzed ECoG data from
+multiple frequency bands using two 3-D convolutional layers,
+surpassing traditional machine learning approaches in ﬁnger
+trajectory decoding. Their experiments underscored the crucial
+role of the high-gamma band in decoding ﬁnger trajectories, as
+its activation strongly correlates with the physiological patterns
+of ﬁnger movements.
+While traditional machine learning and deep learning
+methods have advanced coarse motor control, they often
+struggle with ﬁne motor task accuracy especially in real-world
+BCI applications that demand robust individual general-
+ization. These limitations stem from challenges in feature
+extraction, temporal dependency modeling, and managing
+high-dimensional
+signal
+data,
+all
+of
+which
+are
+critical
+for capturing the subtle dynamics of ﬁne motor control.
+In response, we propose DeepFingerNet, a novel nested
+U-Nets-based architecture speciﬁcally designed for ECoG-
+based ﬁnger trajectory prediction. The main contributions are
+as follows.
+1) To enhance feature extraction, we introduce nested skip
+connections that integrate low-level spatial features with
+high-level abstract representations, enabling the network
+to capture both ﬁne-grained and global features from the
+ECoG signal for accurate ﬁnger trajectory decoding.
+2) To optimize the directionality and magnitude of the
+predicted trajectories, we employ a hybrid loss function
+combining cosine similarity and mean squared error
+(mse), ensuring better alignment between the predicted
+and true trajectories and addressing key challenges in
+motor decoding.
+3) To verify the eﬀectiveness of our proposed method, we
+conduct experiments on two publicly available ECoG
+datasets—BCI Competition IV Dataset 4 and a Stanford
+University dataset—showing superior performance with
+a correlation coeﬃcient of 0.69 on the BCI dataset
+(an improvement of up to 17% over baseline methods)
+and 0.54 on the Stanford dataset (a 5% improvement),
+respectively.
+II. RELATED WORK
+A. ECoG for Motor Decoding
+BCIs play a vital role in enabling direct neural control
+for motor restoration [2], emotion regulation [23], [24], [25],
+and communication enhancement [26]. ECoG-based motor
+decoding has gained signiﬁcant attention for its potential in
+BCIs because of its superior spatial and temporal resolution
+compared to EEG. Early work by Penﬁeld and Jasper [27]
+(1950’s) established the foundation for brain mapping, while
+Schalk et al. [28] demonstrated ECoG’s application in 2-D
+cursor control, achieving accuracy rates of 53%–73%. Subse-
+quently, Flint et al. [29], and Warren et al. [30] showcased
+ECoG’s potential in prosthetic control and grasping force
+decoding. However, traditional methods using handcrafted
+features like spectral power and phase-amplitude coupling,
+classiﬁed with models such as SVM, LDA, and KNN, strug-
+gle with ﬁne-grained tasks like ﬁnger trajectory decoding.
+Methods such as Flamary and Rakotomamonjy [19] switched
+linear models and Yao et al.’s [17] time-frequency extraction
+achieved moderate success but failed to capture the temporal
+dynamics critical for decoding subtle motor movements.
+Recent advances in deep learning, especially CNNs com-
+bined with LSTMs, have signiﬁcantly improved the ability to
+decode ﬁnger movements from ECoG signals. Xie et al. [20]
+demonstrated that integrating CNNs with LSTMs produces
+smoother and more accurate ﬁnger trajectory predictions. Sim-
+ilarly, Lomtev et al. [21] proposed the FingerFlex model, while
+Kuo et al. [22] developed a 3D-CNN model that outperformed
+traditional methods, highlighting the critical role of the high
+gamma band in ﬁnger movement decoding. These innovations
+underscore the shift toward deep learning models for ECoG
+decoding, which more eﬀectively capture the spatial and tem-
+poral complexities of high-dimensional data, paving the way
+for advancements in neuroprosthetics and motor rehabilitation.
+B. U-Net in Brain–Computer Interfaces
+The U-Net architecture, originally developed for medical
+image segmentation [31], has been successfully adapted for
+BCIs, particularly in analyzing EEG and ECoG signals [32],
+[33], [34]. Its ability to capture spatial and temporal features
+makes it well-suited for decoding motor intentions and cogni-
+tive states requiring high-resolution signal analysis.
+In early applications, U-Net was used for EEG signal clas-
+siﬁcation, demonstrating its eﬀectiveness in learning relevant
+features from time-series data. Khessiba et al. [33] developed
+two UNet-based deep learning architectures (1D-UNet and
+1D-UNet-LSTM) for detecting alertness states, outperform-
+ing existing methods in accuracy and recall, with real-time
+performance on devices like Raspberry Pi 3. Similarly,
+Chatzichristos et al. [35] proposed a multiview attention-
+gated U-Net for seizure detection, enhancing performance
+by fusing EEG data from diﬀerent preprocessing techniques
+and incorporating a bidirectional LSTM to capture long-term
+dependencies. Additionally, U-Net has been applied to remove
+EEG artifacts. Chuang et al. [34] introduced IC-U-Net, which
+eﬀectively combines independent component analysis (ICA)
+with U-Net to remove artifacts (e.g., eye movements, muscle
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 3
+============================================================
+TAO et al.: DeepFingerNet PREDICTS FINGER TRAJECTORY FROM ECoG MEASUREMENTS
+4022112
+activity, noise) from EEG signals, signiﬁcantly improving
+signal quality in both simulated and real-world data.
+Despite these advances, most existing U-Net applications
+in BCI research have been limited to classiﬁcation or arti-
+fact removal tasks. These models typically employ shallow
+encoder–decoder structures with simple one-to-one skip con-
+nections, which restrict their ability to capture the complex,
+continuous spatiotemporal dynamics required for trajectory
+decoding. Moreover, conventional loss functions such as mse
+focus solely on magnitude errors and overlook directional con-
+sistency between predicted and actual movements. To address
+these limitations, we adopt and extend the U-Net architecture
+into a nested multidepth framework termed DeepFinger-
+Net that enables dense cross-scale feature fusion and joint
+optimization of trajectory direction and amplitude.
+III. MATERIALS AND METHODS
+A. Dataset Description
+This study uses two publicly available datasets to evaluate
+the proposed method: the BCI Competition IV Dataset 41 [36]
+and a public dataset provided by Stanford University2 [37].
+These datasets collectively include data from 12 subjects, with
+three subjects from the BCI Competition IV Dataset 4 and
+nine subjects from the Stanford dataset. Both datasets feature
+participants with epilepsy.
+Both datasets follow the same experimental paradigm.
+A screen displaying a cue word was placed in front of each
+subject. The subject was instructed to perform a single ﬁnger
+movement in response to the cue word, with the subject
+determining the frequency and amplitude of the movement.
+Each cue word lasted for two seconds, followed by a two-
+second rest period before presenting the next.
+The ECoG data were recorded from 48 to 64 electrodes,
+distributed across grids such as 6 × 8 or 8 × 8, with the
+number and distribution of electrodes varying across subjects.
+Finger movement data were captured using a glove placed on
+the subject’s hand, which recorded the amplitude of the ﬁnger
+movement. The initial ECoG data had a sampling frequency
+of 1000 Hz, while the ﬁnger movement data were sampled at
+25 Hz.
+B. Preprocessing and Feature Extraction
+The preprocessing pipeline for both datasets follows a
+consistent procedure, as they share the same experimental
+paradigm and data frequency [21]. Preprocessing comprises
+three stages: ECoG data preprocessing, ﬁnger movement data
+preprocessing, and data clipping, as shown in Fig. 1.
+The signals are ﬁrst standardized for the ECoG data prepro-
+cessing by subtracting the mean and dividing by the standard
+deviation for each channel. The median of each channel’s
+signal is subtracted to enhance training convergence further.
+We applied a bandpass ﬁlter of 40–300 Hz to the ECoG signals
+to suppress low-frequency drift and motion artifacts while
+preserving gamma and high-gamma oscillations that convey
+1BCI-IV 4 Dataset: https://www.bbci.de/competition/iv/download/index.
+html?agree=yes&submit=Submit
+2Stanford Dataset: https://exhibits.stanford.edu/data/catalog/zk881ps0522
+Fig. 1. ECoG and ﬁnger motion data preprocessing pipeline.
+execution-related neural activity critical for accurate ﬁnger-
+trajectory decoding [38]. We based this frequency selection
+on both data-driven observations and experimental validation,
+as shown in Appendix Figs. S1 and S2.
+After preprocessing the ECoG signal, the next key step
+is the wavelet decomposition, which extracts the dynam-
+ics of motor-related neural activity using Morlet wavelet
+kernels [39]. We adopted the Morlet wavelet for its bal-
+anced temporal-frequency resolution, enabling us to eﬀectively
+decode nonstationary ECoG signals. It is particularly suited
+for extracting gamma and high-gamma oscillations correlated
+with motor execution and ﬁnger trajectories [40], [41], [42],
+while preserving transient oscillatory dynamics that enhance
+motor decoding reliability. Appendix Fig. S3 presents the
+comparative results of diﬀerent wavelet types.
+The preprocessed ECoG data, denoted as X ∈RN×T (where
+N is the number of channels and T is the number of time
+points), undergoes wavelet transformation. The decomposition
+uses 40 Morlet wavelet kernels, with frequencies ranging from
+40 to 300 Hz, logarithmically distributed. Each wavelet kernel
+Wk is convolved with the signal X to produce the feature map
+Xwavelet =
+40
+X
+k=1
+Wk ∗X.
+(1)
+To reduce data size and improve eﬃciency, we down-
+sample the decomposed signal from an initial frequency of
+1000–100
+Hz.
+Finally,
+we
+scale
+the
+data
+using
+the
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 4
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+Fig. 2. DeepFingerNet Architecture. This model builds upon U-Net and comprises three nested U-Nets with varying depths. The core idea behind this design
+is to enhance the decoder’s feature selection capability by fusing features extracted from U-Nets of diﬀerent depths. In the diagram, the blue solid lines and
+rectangles represent the encoder and its extracted feature maps, while the yellow solid lines and rectangles depict the decoder and its corresponding feature
+maps. Skip connections, shown as blue dashed lines, combine the features from diﬀerent encoders and decoders, while the ﬁnal output prediction appears as
+the red solid line.
+RobustScaler, which normalizes the signals based on the
+interquartile
+range,
+making
+the
+preprocessing
+robust
+to
+outliers [43].
+We up-sampled the ﬁnger trajectory data (25 Hz) to
+100 Hz using double cubic interpolation to match the down-
+sampled ECoG features. This process, consistent with the
+Nyquist–Shannon theorem, preserves the original signal char-
+acteristics without introducing frequencies beyond 12.5 Hz,
+ensuring precise temporal alignment between neural and
+behavioral data [21], [44]. The MinMaxScaler is then applied
+to scale the data within the range [0, 1], ensuring the data are
+suitable for input into the model and reducing the inﬂuence
+of outliers.
+Lastly, we perform data clipping to account for the natural
+temporal delay between neural activity (ECoG signals) and the
+corresponding ﬁnger movement. We introduce a 0.2-s delay
+(equivalent to 20 data points), removing the ﬁrst 20 points of
+the ECoG signal and the last 20 points of the ﬁnger movement
+data to synchronize them appropriately [45].
+C. Model Architecture
+We propose DeepFingerNet, a deep learning model based
+on the nested U-Nets++ architecture, for the challenging
+task of decoding continuous ﬁnger trajectories from ECoG
+signals. The U-Net serves as the foundation of DeepFin-
+gerNet because it provides an eﬀective and interpretable
+framework for modeling hierarchical neural representations
+while preserving ﬁne-grained temporal–spatial information.
+Given that ECoG signals exhibit complex dynamics across
+multiple temporal and spectral scales, such a hierarchical
+encoder–decoder structure is well suited to capture both
+global contextual dependencies and local oscillatory features
+essential for ﬁne-motor decoding. To further enhance feature
+fusion, DeepFingerNet integrates nested skip connections,
+TABLE I
+DEEPFINGERNET NETWORK ARCHITECTURE OVERVIEW
+enabling eﬃcient integration of spatial and temporal features
+and thereby improving the accuracy and robustness of ﬁnger
+trajectory prediction.
+The overall architecture of DeepFingerNet is illustrated in
+Fig. 2 and summarized in Table I. The model consists of
+three nested U-Nets with varying depths, each contributing
+progressively reﬁned feature extraction and reconstruction.
+The blue solid lines and rectangles represent the encoder and
+the features obtained from it, while the yellow solid lines
+and rectangles correspond to the decoder and the features
+extracted by it. Skip connections (blue dashed lines) connect
+the encoder and decoder feature maps so the decoder can
+access rich spatial features from the encoder. The ﬁnal output
+prediction, represented by the red solid line, corresponds to
+the reconstructed ﬁnger trajectory.
+We systematically designed the input and output channel
+conﬁgurations in the encoder and decoder rather than selecting
+them arbitrarily. In the encoder, the number of channels
+increases (32, 64, 128, 256) as the temporal–spatial resolution
+decreases, enabling us to extract higher-level abstract features.
+Conversely, the decoder symmetrically reduces the channel
+dimensions, with each block receiving concatenated inputs
+from the corresponding encoder layer and the up-sampled
+decoder output. As summarized in Appendix Fig. S4, we
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 5
+============================================================
+TAO et al.: DeepFingerNet PREDICTS FINGER TRAJECTORY FROM ECoG MEASUREMENTS
+4022112
+identiﬁed this conﬁguration as achieving the optimal balance
+between decoding accuracy and computational eﬃciency.
+The encoder is responsible for progressively extracting
+high-level features from the input ECoG signal. The encoder
+comprises multiple layers of 1-D convolutions, followed by
+LayerNorm, GELU activation, and MaxPooling operations.
+These layers reduce the temporal dimension of the input signal
+while retaining the most informative features. At each layer i,
+the convolution operation is mathematically expressed as
+Fi
+enc = Conv1d (X, wi) + bi
+(2)
+where X is the input signal, wi is the convolutional kernel, and
+bi is the bias term. After the convolution, the model applies
+LayerNorm to stabilize learning, followed by GELU activation
+to introduce nonlinearity. It then applies max-pooling opera-
+tions are applied to reduce the temporal dimension, allowing
+the encoder to focus on more abstract representations of the
+input data.
+A distinctive feature of DeepFingerNet lies in the use of
+nested skip connections that connect the encoder and decoder
+at various depths. These connections allow for more eﬀective
+fusion of low-level spatial features (from the encoder) and
+high-level semantic information (from the decoder), signiﬁ-
+cantly enhancing the network’s ability to decode ﬁne motor
+control tasks. At each encoder layeri, the feature maps Fi
+enc
+are concatenated with the corresponding decoder layer j,
+forming the skip connections. The concatenation at each skip
+connection is expressed as
+Fij
+skip = Fi
+enc ⊕Fj
+dec
+(3)
+where ⊕denotes concatenation, allowing the decoder to access
+rich features from the encoder at various levels of abstraction.
+These nested skip connections ensure that each decoder layer
+beneﬁts from all preceding encoder layers, enhancing feature
+propagation and improving reconstruction accuracy.
+The decoder reconstructs the ﬁnger trajectory from the high-
+level features extracted by the encoder. The decoder uses
+1-D transposed convolutions (also known as deconvolutions)
+to upsample the feature maps, followed by LayerNorm and
+GELU activation. The upsampling operation at each decoder
+layer j is given by
+Fj
+up = ConvTranspose1d
+
+Fj
+dec, wj
+
++ b j.
+(4)
+After upsampling, the resulting feature maps are concate-
+nated with the corresponding encoder feature maps using the
+nested skip connections. The decoder is then computed as
+Fj
+dec = GELU
+
+F j
+up ⊕Fij
+skip
+
+(5)
+where Fj
+up represents the upsampled feature map and Fi j
+skip
+denotes the concatenated features from the encoder and
+decoder.
+The ﬁnal output of the decoder is the predicted ﬁnger
+trajectory, Ypred ∈RM×T, where M is the number of ﬁngers
+and T is the number of time steps. This trajectory results
+from integrating both spatial and temporal features learned at
+diﬀerent depths of the network. The nested skip connections
+allow the model to leverage ﬁne-grained low-level features
+and higher-level abstract representations for precise ﬁnger
+trajectory prediction.
+We employ a hybrid loss function that combines cosine
+similarity and mse to train the model. Cosine similarity ensures
+that the direction of the predicted ﬁnger trajectory aligns with
+the true trajectory, while mse minimizes the magnitude diﬀer-
+ence. The cosine similarity between the predicted trajectory
+Ypred and the true trajectory Ytrue is calculated as
+Lcos = 1 −
+Ypred · Ytrue
+Ypred
+ ∥Ytrue∥.
+(6)
+The mse is given by
+Lmse = 1
+T
+T
+X
+t=1
+ Ypred (t) −Ytrue (t)
+2 .
+(7)
+The total loss function is a weighted combination of both
+Ltotal = λLcos + (1 −λ) Lmse
+(8)
+where λ is the weighting factor, adjusted based on the speciﬁc
+task, is set to 0.5.
+The model is optimized using the Adam optimizer, which
+adapts the learning rate during training to facilitate conver-
+gence. The model is trained for a maximum of 20 epochs,
+with a batch size of 128, and early stopping is employed to
+prevent overﬁtting.
+D. Simulation Setup
+In the BCI Competition IV Dataset 4, the training and
+validation sets were predivided at a ratio of 6.5:3.5. Similarly,
+the Stanford University public dataset was divided in the
+same ratio for subsequent training. The training set was
+used solely for model training and parameter optimization,
+while the validation set served to prevent overﬁtting and was
+used to calculate the correlation coeﬃcient for performance
+evaluation.
+We trained the model individually for each subject because
+of diﬀerences in the number of ECoG signal channels and
+electrode placement across subjects in the two datasets. To
+improve the data utilization eﬃciency during training, we
+adopted a sliding window approach to read the data succes-
+sively. The window size was set to 256 time points (equivalent
+to 2.56 seconds), with a sliding interval of 1 time point
+(0.01 s). We set the training batch size to 128, using a
+maximum of 20 epochs. The Adam optimizer was used, with
+a learning rate of 2e-5 and a weight decay of 1e-6.
+For the loss function, this work draws on the design of
+FingerFlex [21], combining cosine similarity and mse. Cosine
+similarity focuses on the angular distance between the output
+vector and the target vector, optimizing for direction but
+ignoring size diﬀerences. In contrast, mse emphasizes the
+magnitude diﬀerence between the output and target vectors.
+By combining both, we optimize the direction and magnitude
+of the output vector. The ratio of cosine similarity to mse
+in the loss function is 1:1, which is set to 0.5, respectively.
+At the end of each epoch, the entire validation set was fed into
+the model, and the decoded data was compared to the original
+ﬁnger movement data to compute the correlation coeﬃcient.
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 6
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+Fig. 3. Comparison of correlation coeﬃcients across models and subjects on
+BCI competition IV dataset 4, where *: p < 0.01, **: p < 0.01, and ***:
+p < 0.001 in the comparison between DeepFingerNet and other models.
+The model parameters corresponding to the highest correlation
+coeﬃcient across the 20 epochs were saved as the ﬁnal trained
+model.
+To compare the performance of the proposed method, we
+selected several previously published approaches evaluated on
+the same datasets to ensure fair and consistent benchmarking.
+For the BCI Competition IV Dataset 4, we compared DeepFin-
+gerNet with LSTM [20], Interpretable CNN [46], LightGBM
+[17], and FingerFlex [21]. These models represent diverse
+decoding paradigms, including recurrent neural networks,
+interpretable convolutional frameworks, and gradient-boosting
+methods, all widely used in motor intention decoding. For
+the Stanford University ECoG dataset, we included Linear
+Regression [47], Band-Speciﬁc Amplitude Modulation (AM)
+[48], and FingerFlex [21], which serve as representative base-
+lines for continuous ﬁnger-trajectory prediction. In addition,
+we incorporated results from recent hybrid architectures such
+as CNN-LSTM [17] and DTCNet [44] to provide a more
+comprehensive comparison. These selections ensure that we
+validated all baseline models on the same datasets, enabling
+a direct and meaningful evaluation of DeepFingerNet’s
+performance improvements.
+To facilitate comparison with existing work, we used the
+correlation coeﬃcient as the evaluation metric to assess the
+performance of the models. We conducted a paired t-test
+to compare the correlation coeﬃcients between the pro-
+posed method and the baseline models, enabling a statistical
+assessment of the diﬀerences in performance.
+IV. EXPERIMENTAL RESULTS
+This section presents the detailed performance results of
+DeepFingerNet, followed by an ablation study and an inter-
+pretability analysis. Our results show that DeepFingerNet
+outperforms baseline models in terms of correlation coeﬃ-
+cients across both datasets. The ablation study demonstrates
+that deeper nested U-Net conﬁgurations, particularly the
+3-UNet variant, strike a favorable balance between accuracy
+and eﬃciency. Additionally, interpretability analysis via inter-
+mediate feature map visualizations shows how the model
+Fig. 4. Comparison of correlation coeﬃcients across models and subjects on
+Stanford dataset, where *: p < 0.01, **: p < 0.01, and ***: p < 0.001 in the
+comparison between DeepFingerNet and other models.
+reﬁnes spatial and temporal features to capture critical neural
+patterns for ﬁnger trajectory prediction.
+A. Decoding Performance
+The performance of various methods for decoding ﬁn-
+ger trajectories was compared using the BCI Competition
+IV and Stanford datasets, with results shown in Figs. 3
+and 4 and Table II. Compared to FingerFlex, DeepFingerNet
+achieves a higher average performance, although the diﬀerence
+is not statistically signiﬁcant due to the limited number of
+subjects. Moreover, it consistently outperforms LightGBM,
+LSTM, and InterpretableCNN across all subjects in the BCI
+Competition IV dataset (Fig. 3). Statistical analysis fur-
+ther indicates that DeepFingerNet achieves highly signiﬁcant
+improvements (p < 0.001) in correlation coeﬃcients compared
+to InterpretableCNN and LightGBM, particularly in the aver-
+age across subjects, where it demonstrates superior decoding
+performance.
+Similarly, on the Stanford dataset (Fig. 4), DeepFingerNet
+outperforms in decoding performance, achieving the high-
+est correlation coeﬃcients across all subjects and ﬁngers,
+with signiﬁcant diﬀerences (p < 0.01) compared to Band-
+Speciﬁc AM, and FingerFlex. These results demonstrate
+DeepFingerNet’s superior ability to capture ﬁne motor move-
+ments from ECoG signals, making it particularly eﬀective for
+ﬁnger trajectory decoding.
+Fig. 4 further supports DeepFingerNet’s dominance, show-
+ing its higher correlation values for diﬀerent ﬁnger movements
+across subjects. Notably, it excels in decoding speciﬁc ﬁngers,
+such as the Thumb and Little, highlighting its capability to
+handle the complexities of ﬁne motor task decoding.
+B. Prediction of Finger Trajectory
+Fig. 5 displays the true and predicted ﬁnger trajectories
+over time for each ﬁnger using the validation set. The blue
+and orange lines represent the predicted and true trajecto-
+ries, respectively. The results demonstrate that DeepFingerNet
+eﬀectively captures the dynamics of ﬁnger movements, with
+the predicted trajectories closely following the true signals for
+all ﬁve ﬁngers (Thumb, Index, Middle, Ring, and Little).
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 7
+============================================================
+TAO et al.: DeepFingerNet PREDICTS FINGER TRAJECTORY FROM ECoG MEASUREMENTS
+4022112
+TABLE II
+CORRELATION COEFFICIENT COMPARISON OF DIFFERENT METHODS ACROSS FINGERS AND SUBJECTS ON STANFORD DATASET
+Fig. 5.
+True and decoded trajectories for each ﬁnger: time series from the
+validation set.
+The close alignment between the predicted and true trajec-
+tories highlights the model’s accuracy in decoding ﬁne motor
+movements, particularly for the Thumb and Index ﬁngers,
+where the model shows higher precision. These ﬁndings
+conﬁrm DeepFingerNet’s potential for precise ﬁnger trajectory
+prediction in real-time BCI applications.
+C. Ablation Study
+Evaluating the eﬀectiveness of varying depths in the
+nested U-Net architecture reveals signiﬁcant insights into the
+contribution of each component to DeepFingerNet’s perfor-
+mance on two datasets. As shown in Table III, the models with
+TABLE III
+PERFORMANCE AND COMPUTATIONAL COMPARISON OF DIFFERENT
+U-NET ARCHITECTURES ACROSS SUBJECTS
+increasing depth (3-UNet and 4-UNet) consistently outperform
+the shallower conﬁgurations (2-UNet and 1-UNet). Speciﬁ-
+cally, the 3-UNet architecture achieves the highest average
+correlation coeﬃcient of 0.694, demonstrating a signiﬁcant
+improvement over the 2-UNet (0.54) and 1-UNet (0.46).
+Although the 4-U-Net attains comparable subject-speciﬁc per-
+formance (average 0.677), it does not surpass the 3-U-Net,
+likely due to increased model complexity and reduced training
+eﬃciency. Moreover, the 3-U-Net achieves a favorable tradeoﬀ
+between decoding accuracy, inference time (30.2 ms), and
+model size (1.30 MB), conﬁrming its eﬃciency for real-
+time BCI decoding on a single NVIDIA GPU. Fig. 6 further
+illustrates that the 3-UNet provides a signiﬁcant improvement
+over the 1-UNet and 2-UNet models, as well as superior
+performance compared to the 4-UNet on the Stanford Dataset.
+In Fig. 7, we compare the correlation coeﬃcients under
+three ablation settings that remove speciﬁc skip connections
+among the nested U-Nets. In “Removed Skip Connection-
+I,” the connection from 1-UNet to 2-UNet (i.e., decoder 1
+to decoder 2) is removed. In “Removed Skip Connection-II,”
+the connections from 2-UNet (decoder 4 to decoder 5) and
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 8
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+Fig. 6.
+Comparison of diﬀerent U-Net architectures across subjects on the
+Stanford dataset, where “***” denote that the proposed method (3-UNet)
+achieves statistically signiﬁcant improvement over the 2-UNet and 1-UNet
+with p < 0.001.
+Fig. 7. Comparison of removing the skip connection among the nested U-
+Nets on the BCI IV Competition Dataset, where “*” and “**” denote that
+the proposed method achieves statistically signiﬁcant improvement over the
+ablation settings with removing skip connections with p < 0.05, and p < 0.01,
+respectively.
+3-UNet (decoder 3 to decoder 6) are removed. Finally, in
+“Removed Skip Connection-III,” all skip connections are
+removed. “Removed Skip Connection-I” generally yields
+higher performance than “Removed Skip Connection-II,” sug-
+gesting that the connections from the 2-UNet and 3-UNet play
+a more critical role than those solely from the 1-UNet. How-
+ever, once all skip connections are retained (DeepFingerNet),
+performance increase the most, underscoring the collective
+contribution of these connections in capturing crucial spa-
+tiotemporal features. As shown in Fig. 8, the removal of
+speciﬁc skip connections leads to a decrease in performance.
+The statistical signiﬁcance markers in the average results
+conﬁrm that these diﬀerences are nontrivial, highlighting the
+pivotal role of skip connections in maintaining robust pre-
+dictive accuracy for ﬁnger trajectory decoding from ECoG
+signals.
+Additionally, we systematically evaluated the impact of
+varying the weighting ratios between the mse and cosine
+similarity
+components
+of
+the
+hybrid
+loss
+function
+on
+DeepFingerNet’s decoding performance, as shown in Figs. 9
+and 10. In our experiments, we use the correlation coeﬃcient
+as the evaluation metric and ﬁnd that a balanced loss function
+(i.e., a 1:1 ratio) yields the highest average correlation and
+Fig. 8. Comparison of removing the skip connection among the nested U-Nets
+on the Stanford Dataset, where “*” and “***” denote that the proposed method
+achieves statistically signiﬁcant improvement over the ablation settings with
+removing skip connections with p < 0.05, and p < 0.001, respectively.
+Fig. 9.
+Comparison of correlation coeﬃcients for diﬀerent mse:COS loss
+ratios across subjects on the BCI IV Competition Dataset, where “*,” “**,”
+and “***” denote that the proposed method (1:1 ratio) achieves statistically
+signiﬁcant improvement over the DeepFingerNet with diﬀerent weighting
+ratios with p < 0.05, p < 0.01, and p < 0.001, respectively.
+lowest variability. In contrast, conﬁgurations with imbalanced
+weights (e.g., mse:COS = 3:7 or 3:2) resulted in reduced
+performance, indicating that both directional alignment and
+magnitude accuracy are crucial for optimal decoding. These
+results underscore the importance of ﬁne-tuning the hybrid
+loss function to eﬀectively capture the complex spatiotemporal
+dynamics inherent in ECoG signals, thereby enhancing the
+overall accuracy of ﬁnger trajectory prediction.
+D. Subject-Independent Evaluation
+To further assess the generalization capability of DeepFin-
+gerNet, we conducted a subject-independent evaluation, in
+which we trained the model using data from all subjects jointly
+and tested it individually on each subject. This setting simu-
+lates real-world cross-subject decoding, where the model must
+generalize to unseen participants. As Figs. 11 and 12 show,
+DeepFingerNet consistently achieved the highest decoding
+performance across subjects compared with other benchmark
+models, demonstrating superior robustness and transferability.
+We mainly attribute this improvement to the nested U-Net
+architecture with dense cross-scale skip connections, which
+enables the extraction of subject-invariant yet ﬁne-grained spa-
+tiotemporal representations. Although we did not speciﬁcally
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 9
+============================================================
+TAO et al.: DeepFingerNet PREDICTS FINGER TRAJECTORY FROM ECoG MEASUREMENTS
+4022112
+Fig. 10.
+Comparison of correlation coeﬃcients for diﬀerent mse:COS loss
+ratios across subjects on the Stanford Dataset, where “*,” and “**” denote that
+the proposed method (1:1 ratio) achieves statistically signiﬁcant improvement
+over the DeepFingerNet with diﬀerent weighting ratios with p < 0.05 and
+p < 0.01, respectively.
+Fig. 11. Comparison of correlation coeﬃcients across models in the subject-
+independent experiment on the BCI Competition IV Dataset 4. Statistical
+signiﬁcance: *: p < 0.05, **: p < 0.01; ***: p < 0.001 (versus DeepFinger-
+Net).
+Fig. 12. Comparison of correlation coeﬃcients across models in the subject-
+independent experiment on the Stanford Dataset. Statistical signiﬁcance: *:
+p < 0.05, **: p < 0.01; ***: p < 0.001 (versus DeepFingerNet).
+design DeepFingerNet for cross-subject domain adaptation,
+its stable performance indicates promising inherent general-
+ization, which we will further enhance in future work by
+incorporating subject-adaptive and meta-learning techniques.
+E. Model Interpretability
+DeepFingerNet not only achieves superior decoding accu-
+racy but also enhances interpretability by revealing the internal
+feature transformation process. As Fig. 13 shows, the feature
+maps from each decoder layer (Decoder 1–6, top to bottom)
+demonstrate the progressive reﬁnement of spatial–temporal
+representations derived from the ECoG data. Earlier lay-
+ers capture coarse oscillatory features, while deeper layers
+reveal increasingly discriminative patterns related to ﬁnger
+trajectories. These multilevel visualizations highlight how
+DeepFingerNet hierarchically extracts and integrates neural
+information to produce accurate and interpretable decoding
+outcomes.
+A key innovation lies in DeepFingerNet’s nested skip con-
+nections, which enable a seamless fusion of low-level raw
+data with higher-level abstract representations. The design
+preserves spatial details while incorporating more global fea-
+tures, allowing a better understanding of how ECoG signals
+change over time during the decoding process. The bottom
+plot in Fig. 13 further demonstrates the model’s eﬃcacy,
+comparing the ﬁnal predicted trajectories with the ground
+truth. This alignment not only underscores the accuracy of
+the network but also bridges computational outcomes with
+neurophysiological insights, highlighting the potential clinical
+impact of DeepFingerNet in neuroprosthetics, rehabilitation,
+and broader motor control applications.
+V. DISCUSSION
+Compared with prior CNN-based models, the novelty of
+DeepFingerNet lies in its nested skip connections, which
+provide dense feature fusion across multiple decoder depths.
+This design preserves ﬁne temporal-spectral details while
+progressively reﬁning high-level representations, an ability that
+is especially beneﬁcial for continuous trajectory decoding.
+Unlike attention or transformer-based approaches [49], [50],
+which emphasize global dependencies but often require large-
+scale training data, nested U-Net structures are well suited
+tosuit limited neuroscience datasets, oﬀering a better bal-
+ance between local precision, contextual integration, and data
+eﬃciency.
+The experimental results validate the eﬃcacy of DeepFin-
+gerNet for decoding ﬁnger trajectories from ECoG signals. On
+the BCI Competition IV dataset, DeepFingerNet achieved an
+average correlation coeﬃcient of 0.69, outperforming other
+state-of-the-art methods such as LSTM, Interpretable CNN,
+LightGBM, and FingerFlex by up to 17%. Similarly, on
+the Stanford dataset, the model yielded an average correla-
+tion coeﬃcient of 0.54, demonstrating an improvement of
+approximately 5% over traditional approaches such as Lin-
+ear Regression and Band-Speciﬁc AM. These quantitative
+improvements highlight the model’s capacity to accurately
+capture the complex spatiotemporal dynamics inherent in
+high-dimensional neural measurements.
+Our ablation study conﬁrms that deeper nested U-Net
+conﬁgurations yield superior decoding accuracy compared to
+shallower models. Notably, the 3-UNet conﬁguration achieves
+the highest average correlation across subjects, striking an
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 10
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+Fig. 13.
+Visualizations of feature maps from diﬀerent decoder layers (top to bottom: Decoder 1 through Decoder 6) in DeepFingerNet, illustrating the
+progressive reﬁnement of extracted features. The bottom plot compares the model’s predicted ﬁnger trajectory with the ground truth, demonstrating the
+eﬀectiveness of the decoding process.
+optimal balance between performance and computational eﬃ-
+ciency, as shown in Table III and Figs. 6–8 illustrate the
+impact of skip connections: removing the connection from the
+1-UNet to the 2-UNet (Removed Skip Connection-I) results in
+moderate degradation, while removing connections from the
+2-UNet and 3-UNet (Removed Skip Connection-II) leads
+to even lower performance. When all skip connections
+are removed (Removed Skip Connection-III), performance
+degrades
+signiﬁcantly.
+These
+ﬁndings
+indicate
+that
+the
+skip connections, especially those linking the 2-UNet and
+3-UNet layers, are critical for capturing the ﬁne spatiotempo-
+ral features essential for accurate ﬁnger trajectory decoding.
+Additionally, experiments with the hybrid loss function reveal
+that a balanced weighting (1:1 for mse and cosine similarity)
+is crucial for optimizing both the directional alignment and
+the magnitude of the predicted trajectories. The statistically
+signiﬁcant diﬀerences observed in our experiments underscore
+the pivotal role of these architectural components in achieving
+robust decoding performance.
+Moreover, DeepFingerNet’s design signiﬁcantly enhances
+model interpretability. Visualizations of intermediate feature
+maps across decoder layers reveal the progressive reﬁnement
+of spatial and temporal features, thereby identifying the key
+neural patterns that drive ﬁnger trajectory predictions. The
+nested skip connections enable a seamless fusion of low-level
+and high-level features, oﬀering unprecedented insight into the
+internal mechanisms of the network and bridging computa-
+tional outcomes with neurophysiological understanding.
+Despite the promising results, several limitations warrant
+further discussion. The inherent variability of ECoG signals
+across individuals still necessitates subject-speciﬁc calibration
+or training, which may limit the scalability of DeepFingerNet
+in broader clinical or real-world applications. Moreover, while
+the nested U-Net architecture eﬀectively enhances decoding
+accuracy and generalization, its relatively high computational
+and memory cost could hinder real-time deployment in
+resource-constrained
+environments.
+Future
+research
+will
+explore subject-adaptive learning strategies (e.g., feature align-
+ment, contrastive learning, and meta-learning) to improve
+cross-subject transferability, as well as model compression
+and lightweight architectural designs to enhance eﬃciency.
+Expanding evaluation to larger and more diverse clinical
+datasets will also be essential to further validate the robustness
+and generalizability of DeepFingerNet.
+VI. CONCLUSION
+In this work, we introduced DeepFingerNet, a novel nested
+U-Nets-based framework for decoding ﬁne motor movements
+from ECoG signals. By leveraging nested skip connections and
+a hybrid loss function, DeepFingerNet eﬀectively fuses low-
+level spatial details with high-level abstract representations,
+yielding superior decoding accuracy for ﬁnger trajectory pre-
+diction compared to baseline methods. Experimental results
+on the BCI Competition IV Dataset 4 and the Stanford Uni-
+versity dataset consistently demonstrated improved correlation
+coeﬃcients over baseline methods, highlighting the model’s
+robustness and eﬀectiveness in handling complex neural data.
+Additionally, visualization of intermediate feature maps pro-
+vided insights into the model’s internal processing, revealing
+the progressive reﬁnement of neural features and enhancing
+interpretability. These results not only demonstrate the model’s
+potential for real-world BCI applications but also contribute to
+advancing measurement accuracy and signal interpretation in
+neural decoding systems. Future work will focus on improving
+generalization across diverse subject populations and reducing
+computational complexity to support deployment in resource-
+constrained environments, further enhancing the practicality
+and reliability of ECoG-based decoding for neuroprosthetic
+control and motor rehabilitation.
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 11
+============================================================
+TAO et al.: DeepFingerNet PREDICTS FINGER TRAJECTORY FROM ECoG MEASUREMENTS
+4022112
+REFERENCES
+[1]
+X. Gu et al., “EEG-based brain-computer interfaces (BCIs): A survey of
+recent studies on signal sensing technologies and computational intel-
+ligence approaches and their applications,” IEEE/ACM Trans. Comput.
+Biol. Bioinf., vol. 18, no. 5, pp. 1645–1666, Sep. 2021.
+[2]
+T. Wei et al., “ADFCNN: Attention-based dual-scale fusion convolu-
+tional neural network for motor imagery brain–computer interface,”
+IEEE
+Trans.
+Neural
+Syst.
+Rehabil.
+Eng.,
+vol. 32,
+pp. 154–165,
+2023.
+[3]
+Z. Xue, Y. Zhang, H. Li, H. Chen, S. Shen, and H. Du, “Instrumentation,
+measurement, and signal processing in electroencephalography-based
+brain-computer interfaces: Situations and prospects,” IEEE Trans.
+Instrum. Meas., vol. 73, pp. 1–28, 2024.
+[4]
+A. Jackson, C. T. Moritz, J. Mavoori, T. H. Lucas, and E. E. Fetz, “The
+Neurochip BCI: Towards a neural prosthesis for upper limb function,”
+IEEE Trans. Neural Syst. Rehabil. Eng., vol. 14, no. 2, pp. 187–190,
+Jun. 2006.
+[5]
+X. Chen, B. Zhao, Y. Wang, and X. Gao, “Combination of high-
+frequency SSVEP-based BCI and computer vision for controlling a
+robotic arm,” J. Neural Eng., vol. 16, no. 2, Apr. 2019, Art. no. 026012.
+[6]
+Z. Wang et al., “A least-square uniﬁed framework for spatial ﬁltering in
+SSVEP-based BCIs,” IEEE Trans. Neural Syst. Rehabil. Eng., vol. 32,
+pp. 2470–2481, 2024.
+[7]
+Z. Li, J. Li, S. Zhao, Y. Yuan, Y. Kang, and C. L. P. Chen, “Adaptive
+neural control of a kinematically redundant exoskeleton robot using
+brain–machine interfaces,” IEEE Trans. Neural Netw. Learn. Syst.,
+vol. 30, no. 12, pp. 3558–3571, Dec. 2019.
+[8]
+W. Li et al., “The human–machine interface design based on sEMG
+and motor imagery EEG for lower limb exoskeleton assistance system,”
+IEEE Trans. Instrum. Meas., vol. 73, pp. 1–14, 2024.
+[9]
+Z. Lu et al., “A wearable human–machine interactive instrument for
+controlling a wheelchair robotic arm system,” IEEE Trans. Instrum.
+Meas., vol. 73, pp. 1–15, 2024.
+[10] J. A. Wilson, E. A. Felton, P. C. Garell, G. Schalk, and J. C. Williams,
+“ECoG factors underlying multimodal control of a brain-computer
+interface,” IEEE Trans. Neural Syst. Rehabil. Eng., vol. 14, no. 2,
+pp. 246–250, Jun. 2006.
+[11] M. Kolodziej, A. Majkowski, R. J. Rak, and A. Rysz, “Detection
+of spikes with deﬁned parameters in the ECoG signal,” IEEE Trans.
+Instrum. Meas., vol. 68, no. 4, pp. 1045–1052, Apr. 2019.
+[12] T. Pistohl, A. Schulze-Bonhage, A. Aertsen, C. Mehring, and T. Ball,
+“Decoding natural grasp types from human ECoG,” NeuroImage,
+vol. 59, no. 1, pp. 248–260, Jan. 2012.
+[13] M. Sp¨uler et al., “Decoding of motor intentions from epidural ECoG
+recordings in severely paralyzed chronic stroke patients,” J. Neural Eng.,
+vol. 11, no. 6, Dec. 2014, Art. no. 066008.
+[14] A. Tripathi, A. Gupta, P. A. Prathosh, S. P. Muthukrishnan, and
+L. Kumar, “NeuroAiR: Deep learning framework for airwriting recog-
+nition from scalp-recorded neural signals,” IEEE Trans. Instrum. Meas.,
+vol. 73, pp. 1–13, 2024.
+[15] A. Rahimi, P. Kanerva, L. Benini, and J. M. Rabaey, “Eﬃcient biosignal
+processing using hyperdimensional computing: Network templates for
+combined learning and classiﬁcation of ExG signals,” Proc. IEEE,
+vol. 107, no. 1, pp. 123–143, Jan. 2019.
+[16] T. Yanagisawa et al., “Real-time control of a prosthetic hand using
+human electrocorticography signals,” J. Neurosurgery, vol. 114, no. 6,
+pp. 1715–1722, Jun. 2011.
+[17] L. Yao, B. Zhu, and M. Shoaran, “Fast and accurate decoding of
+ﬁnger movements from ECoG through Riemannian features and modern
+machine learning techniques,” J. Neural Eng., vol. 19, no. 1, Feb. 2022,
+Art. no. 016037.
+[18] K. Volkova, M. A. Lebedev, A. Kaplan, and A. Ossadtchi, “Decoding
+movement from electrocorticographic activity: A review,” Frontiers
+Neuroinform., vol. 13, p. 74, Dec. 2019.
+[19] R. Flamary and A. Rakotomamonjy, “Decoding ﬁnger movements from
+ECoG signals using switching linear models,” Frontiers Neurosci.,
+vol. 6, p. 29, Mar. 2012.
+[20] Z. Xie, O. Schwartz, and A. Prasad, “Decoding of ﬁnger trajectory from
+ECoG using deep learning,” J. Neural Eng., vol. 15, no. 3, Jun. 2018,
+Art. no. 036009.
+[21] V. Lomtev, A. Kovalev, and A. Timchenko, “FingerFlex: Inferring ﬁnger
+trajectories from ECoG signals,” 2022, arXiv:2211.01960.
+[22] C.-H. Kuo et al., “Decoding micro-electrocorticographic signals by
+using explainable 3D convolutional neural network to predict ﬁnger
+movements,” J. Neurosci. Methods, vol. 411, Nov. 2024, Art. no.
+110251.
+[23] Y. Yang et al., “Spectral–spatial attention alignment for multi-source
+domain adaptation in EEG-based emotion recognition,” IEEE Trans.
+Aﬀect. Comput., vol. 15, no. 4, pp. 2012–2024, Oct. 2024.
+[24] Y. Yang et al., “Exploiting the intrinsic neighborhood semantic structure
+for domain adaptation in EEG-based emotion recognition,” IEEE Trans.
+Aﬀect. Comput., vol. 16, no. 3, pp. 2466–2478, Jul. 2025.
+[25] H. Luo, H. Li, W. Tao, Y. Yang, C.-I. Ieong, and F. Wan, “A portable
+and aﬀordable four-channel EEG system for emotion recognition with
+self-supervised feature learning,” Mathematics, vol. 13, no. 10, p. 1608,
+May 2025.
+[26] C.
+M.
+Wong
+et
+al.,
+“Online
+adaptation
+boosts
+SSVEP-based
+BCI
+performance,”
+IEEE
+Trans.
+Biomed.
+Eng.,
+vol. 69,
+no. 6,
+pp. 2018–2028, Jun. 2022.
+[27] W. Penﬁeld and H. Jasper “Epilepsy and the functional anatomy of the
+human brain,” Neurology, vol. 4, no. 6, p. 483, Jun. 1954.
+[28] G. Schalk et al., “Two-dimensional movement control using electrocor-
+ticographic signals in humans,” J. Neural Eng., vol. 5, no. 1, pp. 75–84,
+Mar. 2008.
+[29] R. D. Flint et al., “Extracting kinetic information from human motor
+cortical signals,” NeuroImage, vol. 101, pp. 695–703, Nov. 2014.
+[30] D. J. Warren et al., “Recording and decoding for neural prostheses,”
+Proc. IEEE, vol. 104, no. 2, pp. 374–391, Feb. 2016.
+[31] H. Cao et al., “Swin-UNet: UNet-like pure transformer for medical
+image segmentation,” in Proc. Eur. Conf. Comput. Vis. Cham, Switzer-
+land: Springer, 2022, pp. 205–218.
+[32] H. Zeng et al., “DCAE: A dual conditional autoencoder framework
+for the reconstruction from EEG into image,” Biomed. Signal Process.
+Control, vol. 81, Mar. 2023, Art. no. 104440.
+[33] S. Khessiba, A. G. Blaiech, K. Ben Khalifa, A. Ben Abdallah, and
+M. H. Bedoui, “Innovative deep learning models for EEG-based vigi-
+lance detection,” Neural Comput. Appl., vol. 33, no. 12, pp. 6921–6937,
+Jun. 2021.
+[34] C.-H. Chuang, K.-Y. Chang, C.-S. Huang, and T.-P. Jung, “IC-U-Net:
+A U-Net-based denoising autoencoder using mixtures of independent
+components for automatic EEG artifact removal,” NeuroImage, vol. 263,
+Nov. 2022, Art. no. 119586.
+[35] C. Chatzichristos et al., “Epileptic seizure detection in EEG via fusion of
+multi-view attention-gated U-Net deep neural networks,” in Proc. IEEE
+Signal Process. Med. Biol. Symp. (SPMB), Dec. 2020, pp. 1–7.
+[36] G. Schalk et al., “Decoding two-dimensional movement trajectories
+using electrocorticographic signals in humans,” J. Neural Eng., vol. 4,
+no. 3, pp. 264–275, Sep. 2007.
+[37] K. J. Miller, “A library of human electrocorticographic data and
+analyses,” Nature Human Behaviour, vol. 3, no. 11, pp. 1225–1235,
+Aug. 2019.
+[38] Y. Nakanishi et al., “Mapping ECoG channel contributions to trajectory
+and muscle activity prediction in human sensorimotor cortex,” Sci. Rep.,
+vol. 7, no. 1, p. 45486, Mar. 2017.
+[39] S. Mallat, A Wavelet Tour of Signal Processing. Amsterdam, The
+Netherlands: Elsevier, 1999.
+[40] M. Seeber, R. Scherer, and G. R. M¨uller-Putz, “EEG oscillations are
+modulated in diﬀerent behavior-related networks during rhythmic ﬁnger
+movements,” J. Neurosci., vol. 36, no. 46, pp. 11671–11681, Nov. 2016.
+[41] J. B. Salyers, Y. Dong, and Y. Gai, “Continuous wavelet transform for
+decoding ﬁnger movements from single-channel EEG,” IEEE Trans.
+Biomed. Eng., vol. 66, no. 6, pp. 1588–1597, Jun. 2019.
+[42] S. Duraivel et al., “Comparison of signal decomposition techniques for
+analysis of human cortical signals,” J. Neural Eng., vol. 17, no. 5, Oct.
+2020, Art. no. 056014.
+[43] D. K. Thara, B. G. PremaSudha, and F. Xiong, “Auto-detection of
+epileptic seizure events using deep neural network with diﬀerent feature
+scaling techniques,” Pattern Recognit. Lett., vol. 128, pp. 544–550, Dec.
+2019.
+[44] F. Wang, Z. Luo, W. Lv, and X. Zhu, “DTCNet: Finger ﬂexion decod-
+ing with three-dimensional ECoG data,” Frontiers Comput. Neurosci.,
+vol. 19, Jul. 2025, Art. no. 1627819.
+[45] O. Talakoub, M. R. Popovic, J. Navaro, C. Hamani, E. T. Fonoﬀ, and
+W. Wong, “Temporal alignment of electrocorticographic recordings for
+upper limb movement,” Frontiers Neurosci., vol. 8, pp. 1–9, Jan. 2015.
+[46] A. Petrosyan, M. Sinkin, M. Lebedev, and A. Ossadtchi, “Decoding
+and interpreting cortical signals with a compact convolutional neural
+network,” J. Neural Eng., vol. 18, no. 2, Apr. 2021, Art. no. 026019.
+[47] E. C. Merino, A. Faes, and M. M. Van Hulle, “The role of distinct
+ECoG frequency features in decoding ﬁnger movement,” J. Neural Eng.,
+vol. 20, no. 6, Dec. 2023, Art. no. 066014.
+[48] N. Liang and L. Bougrain, “Decoding ﬁnger ﬂexion from band-speciﬁc
+ECoG signals in humans,” Frontiers Neurosci., vol. 6, p. 91, Jun. 2012.
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+============================================================
+Page 12
+============================================================
+4022112
+IEEE TRANSACTIONS ON INSTRUMENTATION AND MEASUREMENT, VOL. 74, 2025
+[49] Y. Song, Q. Zheng, B. Liu, and X. Gao, “EEG conformer: Convolutional
+transformer for EEG decoding and visualization,” IEEE Trans. Neural
+Syst. Rehabil. Eng., vol. 31, pp. 710–719, 2023.
+[50] W. Tao et al., “SSM-transformer based dual-scale convolutional neural
+network for high-performance EEG decoding,” Tsinghua Sci. Technol.,
+vol. 23, no. 1, 2025.
+Wei
+Tao
+received the Ph.D. degree from the
+Department of Electrical and Computer Engineering,
+Faculty of Science and Technology, University of
+Macau, Taipa, Macau, in 2025.
+He is currently working as a Research Assistant
+with the Department of Electrical and Computer
+Engineering,
+Faculty
+of
+Science
+and
+Technol-
+ogy, University of Macau. His research interests
+include brain–computer interface, machine, and deep
+learning.
+Jianghao Hou received the master’s degree from the
+Department of Electrical and Computer Engineering,
+Faculty of Science and Technology, University of
+Macau, Taipa, Macau, in 2025.
+His research interests include deep learning and
+biomedical signal processing.
+Yi Yang is currently pursuing the Ph.D. degree with
+the Faculty of Science and Technology, University
+of Macau, Taipa, Macau.
+His research interests include brain–computer
+interface, aﬀective computing, SSVEP, and deep
+learning.
+Xun Chen (Senior Member, IEEE) received the B.S.
+degree in electrical engineering from the University
+of Science and Technology of China, Hefei, China,
+in 2009, and the Ph.D. degree in biomedical engi-
+neering from The University of British Columbia
+(UBC), Vancouver, BC, Canada, in 2014.
+He has been a Research Scientist with the Depart-
+ment of Electrical and Computer Engineering, UBC.
+He is currently a Full Professor with the School of
+Information Science and Technology, University of
+Science and Technology of China. He has published
+more than 150 scientiﬁc articles in prestigious IEEE/Elsevier journals and
+conferences. His research interests include the broad areas of statistical signal
+processing and machine learning in biomedical applications.
+Dr. Chen serves as an Associate Editor for IEEE TRANSACTIONS
+ON BIOMEDICAL ENGINEERING,
+IEEE TRANSACTIONS
+ON INSTRU-
+MENTATION
+AND MEASUREMENT, IEEE OPEN JOURNAL
+OF SIGNAL
+PROCESSING, IEEE SIGNAL PROCESSING LETTERS, and Signal Processing:
+Image Communication.
+Tzyy-Ping Jung (Fellow, IEEE) received the B.S.
+degree in electronics engineering from the National
+Chiao Tung University, Hsinchu, Taiwan, in 1984,
+and the M.S. and Ph.D. degrees in electrical engi-
+neering from The Ohio State University, Columbus,
+OH, USA, in 1989 and 1993, respectively.
+He is currently the Co-Director of the Center
+for Advanced Neurological Engineering, Institute of
+Engineering in Medicine, University of California at
+San Diego (UCSD), La Jolla, CA, USA, where he
+is also an Associate Director of the Swartz Center
+for Computational Neuroscience with the Institute for Neural Computation
+and an Adjunct Professor of bioengineering. He is also an Adjunct Professor
+of computer science with National Yang Ming Chiao Tung University,
+Hsinchu; an Adjunct Chair Professor with the College of Education, National
+Tsing Hua University, Hsinchu; an Adjunct Professor with the Department
+of Computer Science and Information Technology, National Cheng Kung
+University, Tainan, Taiwan; and an Adjunct Professor with the School
+of Precision Instrument and Opto-Electronic Engineering, Tianjin Univer-
+sity, Tianjin, China. His research interests are in the areas of biomedical
+signal processing, cognitive neuroscience, machine learning, electroencephalo-
+gram (EEG), functional neuroimaging, and brain–computer interfaces and
+interactions.
+Feng Wan (Senior Member, IEEE) received the
+Ph.D. degree in electrical and electronic engineering
+from The Hong Kong University of Science and
+Technology, Hong Kong, in 2002.
+He is currently an Associate Professor with the
+Department of Electrical and Computer Engineer-
+ing, Faculty of Science and Engineering, University
+of Macau, Taipa, Macau, and a Principal Inves-
+tigator with the Centre for Cognitive and Brain
+Sciences, and the Centre for Artiﬁcial Intelligence
+and Robotics, Institute of Collaborative Innovation,
+University of Macau. His research interests include brain–computer interfaces
+and neural modulation, biomedical signal processing and machine learning,
+computational intelligence and intelligent control.
+Dr. Wan is an Associate Editor of IEEE TRANSACTIONS ON AFFECTIVE
+COMPUTING, Brain Science Advances, and Neural Networks.
+Authorized licensed use limited to: Florida Atlantic University. Downloaded on March 05,2026 at 11:36:38 UTC from IEEE Xplore.  Restrictions apply. 

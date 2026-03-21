@@ -1,0 +1,20 @@
+flowchart LR
+  subgraph ECOG["ECoG Branch"]
+    direction TB
+    A([ECoG from subject]) --> B[Standardize + remove median]
+    B --> C[40–300 Hz bandpass filter]
+    C --> D[50 Hz band-stop filter]
+    D --> E[Wavelet decomposition]
+    E --> F1(Low freq) & F2(Mid freq) & F3(High freq)
+    F1 & F2 & F3 --> G[Downsample]
+    G --> H[RobustScaler]
+    H --> I[Data clipping]
+    I --> J([Processed ECoG — time–freq map])
+  end
+
+  subgraph FINGER["Finger Motion Branch"]
+    direction TB
+    K([Finger data from subject]) --> L[Upsample]
+    L --> M[MinMaxScaler]
+    M --> N([Processed finger data])
+  end

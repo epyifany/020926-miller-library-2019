@@ -1,0 +1,1201 @@
+============================================================
+Page 1
+============================================================
+Received 14 March 2023, accepted 3 April 2023, date of publication 6 April 2023, date of current version 13 April 2023.
+Digital Object Identifier 10.1109/ACCESS.2023.3265040
+Enhancing DNN Models for EEG/ECoG BCI With a
+Novel Data-Driven Offline Optimization Method
+ANTONIOS TRAGOUDARAS
+, (Student Member, IEEE),
+CHARALAMPOS ANTONIADIS
+, (Member, IEEE),
+AND YEHIA MASSOUD
+, (Fellow, IEEE)
+Computer, Electrical and Mathematical Sciences and Engineering (CEMSE) Division, King Abdullah University of Science and
+Technology (KAUST), Thuwal 23955, Saudi Arabia
+Corresponding author: Yehia Massoud (yehia.massoud@kaust.edu.sa)
+ABSTRACT A better understanding of ElectroEncephaloGraphy (EEG) and ElectroCorticoGram (ECoG)
+signals would get us closer to comprehending brain functionality, creating new avenues for treating brain
+abnormalities and developing novel Brain-Computer Interface (BCI)-related applications. Deep Neural
+Networks (DNN)s have lately been employed with remarkable success to decode EEG/ECoG signals for
+BCI. However, the optimal architectural/training parameter values in these DNN architectures have yet to
+receive much attention. In addition, new data-driven optimization methodologies that leverage significant
+advancements in Machine Learning, such as the Transformer model, have recently been proposed. Because
+an exhaustive search on all possible architectural/training parameter values of the state-of-the-art DNN
+model (our baseline model) decoding the motor imagery EEG and finger tension ECoG signals comprising
+the BCI IV 2a and 4 datasets, respectively, would require prohibitively much time, this paper proposes an
+offline model-based optimization technique based on the Transformer model for the discovery of the optimal
+architectural/training parameter values for that model. Our findings indicate that we could pick better values
+for the baseline model’s architectural/training parameters, enhancing the baseline model’s performance by
+up to 14.7% in the BCI IV 2a dataset and by up to 61.0% in the BCI IV 4 dataset.
+INDEX TERMS
+ECoG/EEG signals, BCI, CNN, self-attention model, deep learning, data-driven
+optimization.
+I. INTRODUCTION
+ElectroEncephaloGraphy (EEG) records the brain’s sponta-
+neous electrical activity as an electrogram. It is ordinarily
+non-invasive, with electrodes inserted along the scalp (often
+called ‘‘scalp EEG’’) with the International 10-20 system (see
+Figure 1) or variants thereof. In addition, EleCtrocorticoG-
+raphy (ECoG) is a form of electrophysiological monitoring
+that records electrical activity from the cerebral cortex using
+electrodes placed directly on the brain’s exposed surface.
+Electrodes used in traditional EEG measure this activity from
+outside the skull. On the other hand, because a craniotomy
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Larbi Boubchir
+.
+(a surgical incision into the skull) is necessary to install the
+electrode grid, ECoG is an invasive procedure (see Figure 2).
+The extraction of relevant information from EEG record-
+ings using deep Neural Networks (NN)s has demonstrated
+promising results in detecting neurological illnesses such as
+epilepsy [2], [3] and recognizing ischemic stroke [4], iden-
+tifying sleep disorders [5], decoding motor imagery tasks
+[6], [7], as well as hand movement preparation stages [8], and
+supporting stroke rehabilitation via Brain-Computer Interface
+(BCI) [9]. In addition, the extraction of useful information
+from ECoG recordings using deep NNs has been proven very
+effective in imagined 3D continuous hand translation [10],
+decoding the finger flexion [11], [12] recognizing the state
+of behavioral sleep and waking state [13], decoding hand
+gestures [14], [15], and detecting speech activity [16]. All the
+35888
+This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 License.
+For more information, see https://creativecommons.org/licenses/by-nc-nd/4.0/
+VOLUME 11, 2023
+
+
+============================================================
+Page 2
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 1. Electrode locations of International 10-20 system for EEG
+(electroencephalography) recording. The ‘‘10’’ and ‘‘20’’ indicate that the
+distance between neighboring electrodes is either 10% or 20% of the
+entire front-to-back or right-to-left distance of the skull.
+FIGURE 2. Intracranial electrode grid for electrocorticography. See that
+sensors grid installation requires surgery. Electrodes come out through
+holes made in the skull and the scalp. Reprinted from [1].
+above works extract features from the raw EEG or ECoG sig-
+nals using DL, most usually Convolutional Neural Networks
+(CNN)s, and then harness a classification or regression model
+to make predictions.
+However, despite the tremendous advances in deep NNs-
+assisted EEG/ECoG analysis, optimizing the EEG/ECoG-
+decoding-NN models’ parameters has yet to receive much
+attention. Because we cannot derive a closed-form formula
+for the evaluation of a deep NN model (we say that we con-
+sider it as a ‘‘black box’’), and on top of that, the evaluation of
+a deep NN model is time-consuming because it involves the
+model training/test on given training/test sets, offline Model-
+Based Optimization (MBO) is an attractive method for opti-
+mizing the EEG-decoding-NN models architectural/training
+parameters.
+In offline MBO, a surrogate model of a complex system1
+(like the evaluation of DNN consisting of many parameters
+which in turn take many possible values) is first derived
+and then used as a substitute for the original system (of the
+DNN model evaluation), usually in an evolutionary algorithm
+that performs the optimization. As a result, the optimization
+needs less time, or the evolutionary algorithm can make a
+more extensive search space exploration, arriving at better
+solutions.
+Offline MBO has proven very effective in biology prob-
+lems [17], [18], [19]. However, all previous works mitigate
+the wrong guidance given by the surrogate model to the
+optimizer due to inaccurate predictions, more often overesti-
+mations. That happens because the estimated model is trained
+on a small manifold of the possible input space, making the
+predictions far from the training distribution harder. More
+specifically, [17] leverages a maximum-likelihood (NML)
+estimator to reason about uncertainty and out-of-distribution
+values and guide the optimizer to the best solution with
+more confidence. In addition, [18] proposes a model-based
+adaptive sampling, to sample with larger probability inputs
+that may better optimize the desired properties during opti-
+mization. Finally, [19] introduces the conservative objective
+models (COM)s, i.e., a method that learns a model of the
+objective function that lower bounds the actual value of the
+ground-truth objective on out-of-distribution inputs and uses
+it for optimization.
+In this paper, we exploit a data-driven offline optimiza-
+tion technique based on the Transformer model to optimize
+the state-of-the-art deep CNN model decoding the motor
+imagery EEG signals in the BCI IV 2a datasets [20] and the
+finger tension ECoG signals in the BCI IV 4 dataset [21].
+In order to do that, we first perform a random sampling on the
+baseline model architectural/training parameters space under
+consideration to create a dataset that matches these random
+architectural/training parameter values to the evaluated accu-
+racy of the baseline model. Then, we provide that dataset
+to the proposed model-based optimization methodology that
+first builds a surrogate model of the baseline model accuracy
+given architectural/training parameter values and then makes
+use of that surrogate model in a metaheuristic optimization
+algorithm to find the architectural/training parameter values
+that achieve the best accuracy. Our main contributions in this
+work are:
+1) Improve the accuracy of an existing Deep Learning
+(DL) model for decoding EEG & ECoG signals of BCI
+applications.
+2) Enhance the generalizability of the surrogate model
+in the proposed MBO method to optimize the DDN
+models for decoding EEG/ECoG signals of new unseen
+subjects.
+1A system that requires a long time to respond at a given input and the
+input space is gigantic.
+VOLUME 11, 2023
+35889
+
+
+============================================================
+Page 3
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 3. A pictorial representation of the BCI IV 2a dataset. The time is
+divided into trials, and each trial is divided into timestamps. One of the
+labels Rest, Feet, Hand (L), and Hand (R) is given to every timestamp.
+3) Show that the proposed data-driven MBO technique is
+better than other MBO techniques for the optimization
+of DNN models decoding EEG/ECoG signals.
+4) Present an optimization paradigm for also optimizing
+the DNN models decoding other bio-signals.
+The rest of the paper is organized as follows: Section II
+describes the baseline deep CNN model architecture and
+the motor imagery EEG and finger tension ECoG sig-
+nals datasets. Section III explains the proposed data-driven
+offline optimization methodology to find the best values for
+the baseline CNN model architectural/training parameters.
+Finally, in section IV, we demonstrate the better accuracy
+we can obtain using the architectural/training values found
+by the proposed optimization methodology while conclu-
+sions are drawn, and our plans for future work are presented
+in Section V.
+II. EEG/ECoG SIGNALS DECODING
+The authors of [22] demonstrated a variety of CNN archi-
+tectures, ranging from 2- to 31-layer CNN networks, for
+decoding the EEG signals in the motor imagery BCI IV 2a
+dataset. Furthermore, these deep CNN models could decode
+motor imagery EEG signals as well as or better than Filter
+Bank Common Spatial Patterns (FBCSP) [23], the winner
+of many EEG-decoding competitions. Finally, the Shallow
+ConvNet model was the most accurate on average for all
+subjects among all the proposed architectures in that work.
+A. BCI IV 2a DATASET
+The 22-electrode EEG recordings comprising the BCI IV
+2a dataset represent nine patients’ motor imagery-related
+brain activity. Each individual i has a distinct collection of
+EEG recordings made while performing four distinct body
+movements, namely ‘‘Left Hand’’, ‘‘Right Hand’’, ‘‘Feet’’ and
+FIGURE 4. A pictorial representation of the BCI IV 4 dataset. The time is
+divided into trials, and each trial is divided into timestamps. A finger
+flexion value, i.e., a real continuous value, is given to every timestamp.
+‘‘Rest’’. The j-th entry of the i-th subject in the dataset is
+represented as Di = {Xj, Y j}, j from 1 to the total number
+of recorded trials, where Xj ∈ℜE×T and Y j ∈ℜT , with
+E denoting the number of recorded electrodes, T the number
+of timesteps after the discretization of each trial, and Y j being
+labeled with one of the four types of body movements, in each
+timestep of the j-th trial (see Figure 3).
+B. BCI IV 4 DATASET
+The shallow ConvNet model has also been tested on Electro-
+physiological (ECoG) signals in the BCI IV 4 dataset showing
+better performance than previous works.
+The BCI IV 4 dataset consists of 62, 48, and 64 -electrode
+ECoG recordings corresponding to 3 epileptic patients. The
+dataset has the same structure as the BCI IV 2a. However,
+measurements of finger flexion (continuous values) are given
+at every timestep instead of class labels (see Figure 4).
+C. SHALLOW ConvNet
+Shallow ConvNet mimics the spatial filters (bandpass and
+Common Spatial Patterns (CSP)) in FBCSP with temporal
+and spatial convolution in the initial two layers. A squaring
+nonlinearity layer, a mean pooling layer, and a dense layer
+with the softmax activation function comprise the remainder
+of the pipeline, which resembles the logarithmic variance cal-
+culation in FBCSP. Figure 5 illustrates the Shallow ConvNet
+model architecture. Although Shallow ConvNet is accurate
+enough, its accuracy can be improved further by tuning its
+architectural/training parameters.
+III. DATA-DRIVEN OFFLINE OPTIMIZATION OF THE
+SHALLOW ConvNet ARCHITECTURE
+To improve the Shallow ConvNet architecture, we alter some
+of the Shallow ConvNet architectural/training parameters.
+First, we assume a vast search space consisting of 8.5 billion
+35890
+VOLUME 11, 2023
+
+
+============================================================
+Page 4
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 5. The Shallow ConvNet model architecture decoding the BCI IV
+2a or 4 datasets, respectively. The model comprises a temporal
+convolutional layer, i.e., convolutional operations through time with
+40 different kernels, a spatial filter, i.e., convolutional operations across
+the 40 channels for every timestamp, a mean pooling layer, and finally,
+a linear classification layer with 4 outputs when the model is decoding
+the BCI IV 2a dataset (EEG) or a linear regression layer when the model is
+decoding the BCI IV 4 dataset (ECoG).
+distinct architectural/training configurations to exhaust our
+options for finding a more accurate Shallow ConvNet-like
+model. Then, using a small sample of Shallow ConvNet-like
+modified models, D =
+{{x1, y1}, .., {xi, yi}, . . . , {xn, yn}},
+with xi being a Shallow ConvNet architecture with ran-
+dom architectural/training parameters values, and yi being
+the average accuracy across all subjects of that model after
+training and testing it on a given training/test set, we train a
+surrogate model, based on the Transformer model, predicting
+the accuracy of new Shallow ConvNet architectures. Finally,
+we employ the Firefly evolutionary optimization algorithm
+using the previous surrogate model to explore the Shallow
+ConvNet architectural/training space and discover their best
+values that maximize the accuracy of the Shallow ConvNet
+model [22].
+A. SHALLOW ConvNet ARCHITECTURAL/TRAINING
+PARAMETERS SEARCH SPACE
+This subsection discusses the architectural/training Shallow
+ConvNet design choices we consider in our study. A Shallow
+ConvNet-like architectural model and its training are defined
+by eight discrete-valued variables (pi for i from 1 to 8),
+each corresponding to a different Shallow ConvNet architec-
+tural/training parameter. As shown in Table 1, the first five
+TABLE 1. Architectural/training parameters of shallow convnet defining
+our search space.
+design choices refer to the Shallow ConvNet architectural
+model parameters (see Fig. 5), and the last three are associ-
+ated with tuning the training of the Shallow ConvNet model.
+B. SURROGATE MODEL
+The purpose of the surrogate model is to predict the accu-
+racy of the Shallow ConvNet model for any combination of
+the architectural/training parameters shown in Table 1. The
+objective in the training of the surrogate model is essen-
+tially the minimization of the mean-squared-error between
+the projected fθ(xi) and the ground truth yi accuracy val-
+ues. However, such a model can overestimate its predic-
+tions at unseen configurations (call them x−configurations),
+as shown in [19]. Therefore, we optimize fθ to discover
+those unseen configurations (x−) and formulate the objective
+function appropriately to prevent fθ from learning overesti-
+mated values at x−configurations [24]. Thus, the objective
+in training is:
+θ⋆= argmin
+θ
+(Exi,yi∼D[(fθ(xi) −yi)2]
+−α Ex−∼Opt(fθ)[fθ(x−)]),
+(1)
+where Exi,yi∼D[(fθ(xi) −yi)2] is the MSE term, α Ex−∼Opt(fθ)
+[fθ(x−)] is the term in the objective to prevent overestimations
+on unseen configurations, and Opt(fθ) is the Optimizer, e.g.,
+the Gradient Ascent (GA), to discover the x−configurations
+by maximizing the surrogate model (fθ).
+1) CONTEXT-AWARE SURROGATE MODEL
+In order to make the surrogate model more general and can
+accommodate new subjects without requiring to re-train it,
+we extended its modeling with a context vector ck ∈ℜ5
+that contains information (features) about the subjects. In our
+study, we consider the age group and the gender of the
+subjects 2 as features. More specifically, the subjects’ age
+group can be 18 to 30, 31 to 50, or 50+, and their gender can
+be male or female. Because that information is unavailable
+in the datasets under test, we assume random values for
+these features. Therefore, we add semantic information to the
+surrogate model, which is harnessed by the optimization algo-
+rithm, we describe in subsection III-D, to discover either the
+2One can also think of other helpful information to add, e.g., information
+related to the subject’s medical history.
+VOLUME 11, 2023
+35891
+
+
+============================================================
+Page 5
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+best-accuracy on average ConvNet-like architecture across
+all subjects, i.e., what we do in case we do not consider any
+context vector with the subtle difference that in the context-
+aware case the xis in the dataset are annotated with the
+Shallow ConvNet’s accuracy of the subject under test each
+time and not the average accuracy across all subjects because
+the context vector offers the degree of freedom to do so or the
+best-accuracy ConvNet-like architecture for a novel context
+vector pertinent to a new subject (personalized healthcare).
+In the latter case, the surrogate model is not re-trained on any
+data corresponding to the new subject, which is expensive, but
+the relevant information about the new subject is conveyed
+into the surrogate model through the context vector. The
+optimization problem for the training of the surrogate model
+is now defined as follows:
+θ⋆= argmin
+θ
+(Exi,yi,k∼Dn
+k∼[K]
+[(fθ(xi, ck) −yi,k)2]
+−αEx−∼Opt(fθ)
+k∼[K]
+[fθ(x−, ck)]).
+(2)
+Specifically, we built a dataset D = {D1 . . . , DN}, where
+each Di refers to a ConvNet-like architecture configured
+with randomly selected values of the architectural/training
+parameters in Table 1 (xi) and annotated with its decoding
+accuracy on the test-set of the k-th subject’s recordings (yi,k).
+Also, ck is the context vector for the k-th subject. The main
+difference between eq. (1) and eq. (2) is that in eq. (1) yi is the
+average Shallow ConvNet’s accuracy across all subjects given
+xi, while in eq. (2) yi,ck is the Shallow ConvNet’s accuracy of
+the k-th subject given xi, and fθ depends besides xi to ck too.
+The context-aware DL pipeline that describes the sur-
+rogate model (fθ(xi, ck)) is shown in Figure 6. The one-
+hot encodings of the architectural/training parameters are
+stacked together into a 163-dimensional vector ,3 which is
+then embedded into a 512-dimensional vector space. The
+previous embedding is then unpacked into 8 × 64 vectors
+corresponding to each architectural/training parameter. After
+that, a ‘‘positional encoding’’ of the parameters is added
+to the input embedding. The positional encodings have the
+same dimension as the input embeddings, i.e., 64 dimensions,
+so the two can be summed. We consider the sine-and-cosine-
+with-different-frequencies-positional-encoding [25], shown
+below:
+PE(pos,2i) = sin (pos/100002i/64),
+PE(pos,2i+1) = cos (pos/100002i/64)
+(3)
+where pos is the parameter’s position in the list of parameters
+and takes values from 0 to 7, and i is the dimension in the
+embedding, and takes values from 0 to 31. The previous
+embeddings then go through 2 Multi-Head Attention [25]
+layers before the output of 8 × 64 is flattened into a vector
+of size (512, ), i.e., the Transformer embeddings. In parallel,
+the one-hot encodings of the context vectors are stacked
+3The sum of the discrete values the architectural/training parameters can
+obtain.
+together in a 5-dimensional4 vector which is then embed-
+ded into two different 512-dimensional vector spaces, one
+through one dense layer and the other through two dense
+layers. After that, the first context vector embedding, i.e.,
+the embedding through one dense layer, is cross-multiplied
+with the Transformer embeddings. Then, the 512-dim point-
+wise multiplication product is fed into N different voting
+prediction sub-networks, spawning f 1
+θ (x, ck), f 2
+θ (x, ck), . . . ,
+f N
+θ (x, ck). In addition, the 512-dim point-wise multiplication
+product is concatenated with the second 512-dim context
+vector embedding, i.e., the context vector embedding through
+the two dense layers, to create a 1024-dim vector, which is
+given as input to two dense layers producing N weights w1,
+w2, . . . , wN that decide the contribution of each f i
+θ. The final
+output is obtained by fθ(x, ck) = PN
+i=1 wif i
+θ(x, ck), where
+PN
+i=1 wi = 1.
+Finally, the training of the context-aware surrogate model
+is performed as described in Algorithm 1.
+Algorithm 1 Surrogate Model Training
+1: Initialize the DL model of fθ(x, ck)
+2: for every batch in D do
+3:
+Initialize x−values with the x values in the batch
+4:
+for _ in range: Optiter do
+5:
+Update the x−
+j values to maximize fθ(x), ∀j
+6:
+end for
+7:
+Update θ using the Adam Optimizer with Loss
+function the Eq. 2 and negative samples the x−values
+8: end for
+9: return final learned model fθ
+C. ATTENTION MECHANISM
+Our surrogate model leverages the Multi-Head self-Attention
+(or intra-attention) mechanism proposed in [25]. Intuitively,
+the self-Attention mechanism assesses the semantic relation-
+ship between every Shallow ConvNet architectural/training
+parameter with every other architectural/training parameter
+in Table 1, including itself, by assigning higher weights when
+the semantic relationship is stronger and lower weights when
+the semantic relationship is weaker and then, re-scaling the
+initial parameters’ embeddings according to these weights.
+Therefore, the result is eight embedding vectors that carry
+contextual information. For example, the ‘‘Temporal Filters’’
+parameter in Table 1 would be compared with itself and the
+rest (other seven) of the architectural/training parameters to
+compute the weights showing its semantic relationship with
+the other parameters, and its embedding would be updated by
+scaling the embeddings of the other parameters according to
+these weights.
+4Three dimensions corresponding to the subjects’ age group, and 2 dimen-
+sions corresponding to the subjects’ sex.
+35892
+VOLUME 11, 2023
+
+
+============================================================
+Page 6
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 6. The DL pipeline of the surrogate model. Two Multi-Head Attention layers embed the architectural/training
+parameters into a vector space. Then, these embeddings are fused with embeddings of context vectors pertinent to each
+subject. The resulting embeddings from the fusion are 1) used to find suitable functions f 1
+θ , . . . , f N
+θ , and 2) weights
+w1, . . . , wN for scaling f 1
+θ , . . . , f N
+θ , respectively, so that after summing all the products of the functions f 1
+θ , . . . , f N
+θ
+with the
+respective weights to arrive at the final surrogate model.
+1) SCALED DOT-PRODUCT ATTENTION
+In more detail, assume the eight initial Shallow ConvNet
+architectural/training parameters embeddings be {ui}i=1...8 ∈
+ℜ1×dk, and define the ‘‘Query’’ matrix Q ∈ℜdk×dk, the
+‘‘Key’’ matrix K ∈ℜdk×dk, and the ‘‘Value’’ matrix V ∈
+ℜdk×dk with the corresponding i-th row of these matrices
+being
+qi = uiMq + bq
+ki = uiMk + bk
+vi = uiMv + bv,
+respectively, where the Mq, Mk, Mv matrices ∈ℜdk×dk,
+and the bq, bv, and bv bias vectors ∈ℜ1×dk, are going to
+be learned during the self-Attention model training. Then,
+the final parameters embeddings are derived by performing
+a weighted-sum over all the initial embeddings (ui): ˜ui =
+P8
+j=1 wi,juj with wi,j being the (i, j) element of the matrix W
+defined as:
+W = softmax(QKT
+√dk
+).
+The aforementioned attention mechanism is called Scaled
+Dot-Product Attention in [25]. See that the multiplication
+QKT essentially measures the semantic relationship or the
+similarity between all the parameters i.e. the dot prod-
+uct between every row of the matrix Q (I remind you
+that every row of the matrix Q correspond to an architec-
+tural/training parameter) with the columns of the matrix KT
+(again every column of the matrix KT corresponds to an
+architectural/training parameter). Finally, the element-wise
+multiplication with the
+1
+√dk mitigates the vanishing gradient
+issue that could make the model training unstable.
+2) MULTI-HEAD ATTENTION
+Now, instead of having a single self-attention layer, we can
+split this operation into h parallel self-attention layers/heads,
+each generating dk
+h dimensional contextual representations.
+The ‘‘Query’’, ‘‘Key’’ and ‘‘Value’’ matrices are first given
+as input to h parallel Linear layers. Then, the outputs of
+the self-Attention heads are concatenated altogether before
+being passed to a new Linear Layer. The multi-head mecha-
+nism enables the attention model to jointly attend to differ-
+ent semantic information between the architectural/training
+parameters. Doing so allows the discovery of more pow-
+erful contextual embeddings, compared to the single-head
+paradigm.
+D. FIREFLY OPTIMIZER
+After training the surrogate model with Algorithm 1, we call
+the Firefly optimizer [26], [27], [28] to start searching for
+the architectural/training values that lead to the most accu-
+rate Shallow ConvNet architecture. Initially, a population of
+VOLUME 11, 2023
+35893
+
+
+============================================================
+Page 7
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 7. Multi-Head Attention model. See the h parallel Scaled
+Dot-Product Attention layers, each finding a dk
+h -dimensional embedding,
+and dk being the dimension of the final embedding.
+n different firefly particles, i.e., the Shallow ConvNet Archi-
+tecture with different parameter values, is selected. Each
+firefly particle xi in the population is associated with an
+intensity value I, i.e., fθ(xi). The intuition behind updating
+the ‘‘position’’ of a firefly is based on the observation that a
+firefly with higher intensity Ij located at position xj will attract
+another firefly with a smaller intensity Ii located at position xi.
+The position update step is performed as follows:
+xt+1
+i
+= xt
+i + e−r2
+ij(xt
+j −xt
+i ) + αtϵt
+i ,
+(4)
+with
+αt = 0.97αt−1,
+where rij is the intensity distance between the firefly particle i
+and the firefly particle j, ϵt
+i is a random configuration from the
+design space, and αt is a changing parameter in every iteration
+that controls the diversity of the design solution. Moreover,
+because all the calculations in Equation 4 involve continu-
+ous variables, but the Shallow ConvNet architectural/training
+parameters we consider are discrete variables, we need to
+map the continuous values to discrete values. Therefore,
+after performing the calculations in the position update step,
+we map the updated position xt+1
+i
+to the closest valid discrete
+value. Then, after repeating the update step for C cycles,
+the final list of firefly particles is returned as the solution to
+the optimization problem, which in our case is the Shallow
+ConvNet architectural/training parameter values that lead to
+the best accuracy (see Algorithm 2).
+IV. EXPERIMENTAL RESULTS
+In this section, we demonstrate that the Firefly Opti-
+mizer, using as objective the proposed surrogate model in
+subsection III-B, could discover the best values of the archi-
+tectural/training parameters in Table 1 that lead to a more
+accurate Shallow ConvNet model, tested on the BCI IV 2a
+and 4 datasets.
+Algorithm 2 Firefly Pseudocode
+1: Input: Surrogate model fθ(x)
+2: Initialize the firefly population xi, i = 1, 2, · · · , n, i.e.,
+random combinations of the Shallow ConvNet model
+architectural/training values.
+3: Ii = fθ(xi), i = 1, 2, · · · , n
+4: for t = 1 : C do
+5:
+for i = 1 : n do
+6:
+for j = 1 : n do
+7:
+if It
+i < It
+j then
+8:
+Update xt
+i (to xt+1
+i
+) with Eq. 4
+9:
+It+1
+i
+= fθ(xt+1
+i
+)
+10:
+if It+1
+i
+< It
+i then
+11:
+xt+1
+i
+= xt
+i
+12:
+It+1
+i
+= It
+i
+13:
+end if
+14:
+end if
+15:
+end for
+16:
+end for
+17: end for
+18: return argmax
+xi,∀i fθ(xi)
+Our experimental framework was developed in Python
+using the TensorFlow library. All our experiments were per-
+formed on a system with a single NVIDIA V100 with 64GB
+of RAM, and a 3.7GHz Intel Xeon Gold 6154 CPU.
+A. TRAINING CONFIGURATIONS
+1) CONTEXT-LESS APPROACH
+Initially, we created three offline datasets, one for the BCI
+IV ECoG regression challenge and the other for the BCI
+IV 2a EEG high and low-frequency classification chal-
+lenges ,5 respectively, to train the surrogate models of our
+proposed method. Each dataset consists of 8000 samples,
+and each sample results from a different random combina-
+tion of the Shallow ConvNet architectural/training parameter
+values shown in Table 1. In addition, every sample in the
+offline dataset is annotated with its average decoding accu-
+racy across all subjects, obtained by re-training the Shallow
+ConvNet using the random architecture/training parameters
+values associated with that sample itself.
+For each offline dataset D, created in the previous step,
+we have trained a surrogate model using Algorithm 1 for
+approximately 530 epochs. We considered the following
+hold-out validation strategies for each test case during our
+experiments. Either train on 80% of the configurations in
+the offline dataset and validate on the rest 20%, or train
+on the 90% of the configurations and validate on the rest
+10%. This approach leads to finding a Shallow ConvNet
+model’s ideal architectural and training settings with optimal
+5The EEG signals in the BCI IV 2a dataset are filtered with a 3rd order
+Butterworth filter, resulting in a low (0-38Hz) and a high (4-38Hz) frequency
+sub-datasets.
+35894
+VOLUME 11, 2023
+
+
+============================================================
+Page 8
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+decoding accuracy across all subjects in the examined test
+case.
+2) CONTEXT-AWARE APPROACH
+Similarly, we randomly permuted the available architec-
+tural/training parameter values in Table 1 to create three
+offline datasets with 8000 different Shallow ConvNet archi-
+tectures. This time, each sample in the offline datasets is
+annotated with the same number of individual decoding accu-
+racy metrics as the number of available subjects recordings
+under examination, i.e., nine and three in the BCI IV 2a and
+BCI IV 4 test cases, respectively. As in IV-A1, obtaining the
+decoding accuracy metric associated with a sample in one
+of the offline datasets requires the Shallow ConvNet to be
+re-trained using the random architecture/training parameters
+values associated with that sample.
+Each offline dataset is then used to train a context-aware
+surrogate model by minimizing Eq. 2 with Algorithm 1
+for 1060 and 1590 epochs in ECoG-signals-decoding-model
+and EEG-signals-decoding-model test cases, respectively.
+We have considered two strategies during our evaluation; One
+that optimizes for unseen subjects by leaving one subject
+out from the training data (including validation split) and
+the other one that allows the surrogate to be trained on all
+available data we have created corresponding to all subjects
+(refer to III-B1). We employed the same hold-out validation
+strategies for these two evaluation methods as in the context-
+less approach (IV-A1).
+B. DISCOVERED MODELS VS ConvNet MODEL
+Tables 2 and 3 compare the baseline ConvNet model to
+the highest-performing models derived from the context-
+less approach (described in IV-A1), on both high and low-
+frequency test cases in BCI IV 2a EEG challenge, and on
+the single-frequency test case in BCI IV 4 ECoG chal-
+lenge, respectively. Table 4 depicts the optimum architec-
+tural/training parameter values, which attain the decoding
+performance scores reported in Tables 2 and 3, discovered
+by the Firefly Optimizer (refer to III-D) using the context-
+less fθ as objective. It is clear that the data-driven optimiza-
+tion, leveraging offline data, can find a better combination
+of the ConvNet architectural/training parameter values than
+the default values, which leads to better metrics in decod-
+ing the EEG/ECoG signals recordings in the BCI challenge
+datasets.
+Tables 5 and 6 illustrate the highest-performing models
+obtained when we optimize for a single novel context vector
+relevant to an unseen subject. The values in the tables present
+the decoding accuracies of the ‘‘excluded’’ subject from the
+offline training data. It is apparent that the context-aware
+modeling of the surrogate model allows our optimizer (refer
+III-D) to discover architectures that outperform the baseline
+ConvNet by a significant margin. It is worth mentioning that
+besides improving the individual decoding metrics associ-
+ated with the discovered architectures of the left-out subject,
+the context-aware approach also obtains state-of-art average
+TABLE 2. Top decoding-test average accuracies, across all patients,
+of discovered models VS baseline shallow convnet model on BCI-IV 2a
+challenge – context-less optimization.
+decoding performance. Specifically, we obtained 0.886 aver-
+age decoding correlation on the ECoG dataset and 75.1%
+and 75.2% average decoding accuracy on the EEG low and
+high-frequency test cases, respectively. Note that, during our
+experiments, we excluded different subjects to make sure
+our approach was not biased. Our model performance is
+consistently optimal, independently of the ‘‘excluded’’ sub-
+ject selection. In detail, the individual decoding accuracies
+reported in Table 5 refer to the excluded subjects with context
+IDs 2 and 4 for the low and high frequencies EEG test
+cases, respectively. Similarly, in Table 6, we have excluded
+the subject with context ID 2. In Table 7, we annotate the
+ideal architectural/training parameter values for the Shallow
+ConvNet-like architectures that achieve the best decoding
+accuracy on each BCI challenge, obtained by optimizing for
+a novel context vector relevant to a new subject.
+Tables 8 and 9 demonstrate the best-performing models
+obtained when we optimize simultaneously across all avail-
+able subjects without keeping out any subject recordings from
+our offline training data. We call this strategy multi-context
+optimization. Adopting this optimization strategy led to the
+discovery of ConvNet-like architectures, which exhibit the
+best decoding metrics during our study on all BCI IV datasets,
+considered in this study. Table 10 contains the optimal archi-
+tectural/training parameter values for attaining the decoding
+performance metrics reported in Tables 8 and 9.
+It is essential to mention that the reported accuracy and
+correlation scores in all tables in this section refer to the
+ground truth accuracy/correlation achieved by re-training the
+ConvNet model on the respective BCI IV dataset, using
+the optimal architecture and training parameters6 discov-
+ered by each data-driven optimization variant, presented in
+this work.
+In addition, the proposed optimizations ran ×7.87∗106 and
+×4.7 ∗106 days faster, on average, than an exhaustive search
+of all possible architectural/training parameter values for the
+BCI IV 2a high-frequency and low-frequency test cases,
+respectively. Similarly, for the BCI IV 4 ECoG test case,
+our optimizations achieved an average speedup of ×9.8 ∗
+106 days, which means we can tune the model on different
+datasets without relying on the default architectural/training
+parameter values. Finally, it is worth mentioning that our
+6Optimal under our learned fθ, trained on the offline datasets (see IV-A).
+VOLUME 11, 2023
+35895
+
+
+============================================================
+Page 9
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+TABLE 3. Top decoding-test average accuracies, across all patients,
+of discovered models VS baseline shallow convnet model on BCI-IV 4
+ECoG challenge – context-less optimization.
+TABLE 4. Architectural and training parameters of the top performing
+models discovered for each BCI test case – context-less optimization.
+TABLE 5. Top decoding-test accuracies, associated with the excluded
+subject from the training data, of discovered models VS baseline shallow
+ConvNet model on BCI-IV 2a challenge – unseen subject optimization.
+TABLE 6. Top Decoding-Test correlation scores, associated with the
+excluded subject from the training data, of discovered models VS
+baseline Shallow ConvNet model on BCI-IV 4 ECoG challenge – unseen
+subject optimization.
+approach identified more accurate Shallow ConvNet archi-
+tectures despite training on design choices associated with
+decoding performance below the baseline (see the columns
+‘‘D Best/Mean in Training’’7 of Tables 2, 5, 6, and 8).
+C. COMPARISONS WITH OTHER DATA-DRIVEN OFFLINE
+MBO METHODS
+The authors of Design-Bench [29] introduced a benchmark
+for Data-Driven Offline Model-based Optimizations on a
+7‘‘D Best/Mean in Training’’ columns of the previously mentioned Tables
+correspond to the best/mean accuracy obtained on the generated offline
+datasets in each case.
+TABLE 7. Architectural and training parameters of the top performing
+models discovered for each BCI test case – unseen subject optimization.
+TABLE 8. Top Decoding-Test accuracies of discovered models VS baseline
+shallow ConvNet model on BCI-IV 2a challenge – multi-context
+optimization.
+TABLE 9. Top decoding-test correlation scores of discovered models VS
+baseline shallow ConvNet model on BCI-IV 4 ECoG challenge –
+multi-context optimization.
+TABLE 10. Architectural and training parameters of the top performing
+models discovered for each BCI test case – multi-context optimization.
+list of practical tasks derived from real-world challenges,
+such as designing proteins robots and DNA sequencing. Fur-
+thermore, they have publicly disclosed implementing these
+State-of-the-Art MBO methods, which we utilize in this
+study as benchmarks for our proposed Data-Driven MBO
+approach.
+Table 11 compares the best-performing architectures dis-
+covered by each MBO method, tested on the BCI IV 2a EEG
+and BCI IV 4 ECoG challenges. The results indicate that our
+approach prevails in designing ConvNets with higher decod-
+ing accuracy metrics in all BCI test cases. Furthermore, the
+35896
+VOLUME 11, 2023
+
+
+============================================================
+Page 10
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+TABLE 11. Top decoding-test scores derived by the considered offline
+data-driven MBOs on each BCI test case. element values in bold indicate
+the best performing method for the respective BCI challenge dataset.
+considered methods used for comparisons [18], [19], [30],
+[31] have their surrogate models trained on the same offline
+dataset as the one created for the training needs of our surro-
+gate models, as described in IV-A.
+More specifically, the advantage of our method and [19]
+over [18], [30], [31], is that they mitigate the problem of being
+over-optimistic at data points that lie outside the distribution
+of the data samples for building the surrogate model. In addi-
+tion, the proposed model performs better than [19] because
+it relies on the Multi-Head attention model that can extract
+the semantic relationship between the parameters and arrive
+at better vector embeddings.
+D. STATISTICAL VALIDATION
+The surrogate model is built on a statistical sample. Because
+of that, we expect that the predictions for data points that lie
+far away from the data samples used for building the surrogate
+model are not going to be too accurate, even though the pro-
+posed surrogate model is conservative and mitigates to some
+extent the problem of inaccurate predictions for those data
+points. Thus, we are more interested in preserving the slope
+of the actual function between two data points in the surrogate
+model, which means if f (x1) < f (x2), then we would also like
+fθ(x1) < fθ(x2) because we are looking for the best parameter
+values that optimize f . By doing so, instead of optimizing the
+actual f , which is expensive to evaluate, we can evaluate fθ.
+Because of this, instead of providing the MSE between the
+true f and the predicted f (fθ) that demands the difference
+between the two to be as minor as possible, we provide in our
+experiments the Kendall ranking coefficient that measures
+how effectively the slope of f between two data point is
+preserved in fθ. Consider the set S = {y1, y2, . . . , yi, . . . , yn}
+which represents the ground truth decoding accuracy values
+on the validation set, and the set S′ = {y′
+1, y′
+2, . . . , y′
+i, . . . , yn},
+which represents the predicted decoding accuracy values on
+the validation set. Then, the Kendall ranking coefficient (τ)
+is defined as follows:
+τ = c −d
+ n
+2
+ ,
+where c is the number of pairs in S′ that preserve the slope,
+i.e., the sign of the difference between the two pair elements,
+of the corresponding pairs in S and is given by
+c =
+X
+i
+X
+i<j
+1[sgn(yi −yj) = sgn(y′
+i −y′
+j)],
+FIGURE 8. Training Curves of our Context-Less surrogate model for each
+BCI test case. The annotated performance in the training curves were
+achieved using the following α values: 0.1 on EcoG test case and 0.01 on
+both EEG test cases. After approximately 530 epochs, the performance
+index plateaus, at that point the surrogate model has learned to extract
+meaningful patterns from the offline dataset of each BCI test case.
+FIGURE 9. Training Curves of our Context-Aware surrogate model for BCI
+test cases. The annotated performance in the training curves were
+achieved using the following α values: 0.5 on EcoG test case and 0.1 on
+both EEG test cases. After approximately 1060 epochs, the performance
+index plateaus, at that point the surrogate model has learned to extract
+meaningful patterns from the offline dataset of each BCI test case.
+d is the number of pairs in S′ that do not preserve the slope
+of the corresponding pairs in S and is given by
+d =
+X
+i
+X
+i<j
+1[sgn(yi −yj) = −sgn(y′
+i −y′
+j)],
+and
+ n
+2
+
+is the total number of pairs and is given by
+n
+2
+
+= n(n −1)
+2
+.
+Finally, to identify the best value of α in Equations 1 and 2,
+we trained several fθ models with varying α values, i.e.,
+α ∈{0.01, 0.1, 0.5, 1.0, 5.0}, and selected the one that
+resulted in the highest Kendall’s ranking correlation on the
+validation set.
+As in our approach, all MBO methods used for comparison
+have their surrogate model trained on the offline dataset we
+have created (see IV-A) for each BCI test case. We evalu-
+ated the performance of each model on the held-out points
+present in the validation set we created, on the respective
+VOLUME 11, 2023
+35897
+
+
+============================================================
+Page 11
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+FIGURE 10. Training Curves of COMs [19] surrogate model for BCI test
+cases. After approximately 512 epochs, the performance index plateaus,
+at that point the surrogate model has learned to extract meaningful
+patterns from the offline dataset of each BCI test case.
+FIGURE 11. Training Curves of CbAS [18] surrogate model for BCI test
+cases. After approximately 512 epochs, the performance index plateaus,
+at that point the surrogate model has learned to extract meaningful
+patterns from the offline dataset of each BCI test case.
+FIGURE 12. Training Curves of BO_qEI [30], [31] surrogate model for BCI
+test cases. After approximately 512 epochs, the performance index
+plateaus, at that point the surrogate model has learned to extract
+meaningful patterns from the offline dataset of each BCI test case.
+BCI test case, during each training epoch. Figures 8-12, show
+the training curve of the surrogate model for the respective
+MBO method. The performance metric monitored in each
+plot corresponds to Kendall’s rank correlation between the
+prediction S′ of each MBO and the actual ground truth values
+S for the held-out points on the respective BCI test case
+at the end of each epoch. Our analysis indicates that we
+obtained the best model possible, for each method, from the
+offline data as the training curves converge to an almost per-
+fect rank correlation. Especially our surrogate models (both
+context-less and context-aware) are the ones that have gener-
+alized effectively on the held-out points, acquiring Kendall’s
+ranking correlation coefficient of nearly 1.0. The accuracy
+obtained by each MBO method, as captured in the respective
+training curve figure, is aligned with the results presented
+in Table 11, reflecting the true capability of a method in
+discovering effective ConvNet architectures for each BCI test
+case.
+V. CONCLUSION AND FUTURE WORK
+This paper determines the ideal architectural/training param-
+eter values for the Shallow ConvNet model, the state-of-the-
+art deep CNN (our baseline model) for decoding the motor
+imagery EEG/ECoG signals constituting the BCI IV 2a and
+4 datasets, respectively. Our findings demonstrate that we
+can choose better settings for the Shallow ConvNet archi-
+tectural/training parameters to increase the generalizability
+and accuracy of the baseline model. More specifically, when
+we excluded one subject, applied the proposed data-driven
+optimization method, and then tested the accuracy on that
+subject, we obtained an improvement of 14.7% and 61.0%
+on the test-set pertinent to the excluded subject in the BCI IV
+2a and 4 datasets, respectively. Finally, when we considered
+all subjects in our proposed data-driven optimization method,
+an average improvement of 5.0% and 31.3% in BCI IV 2a and
+4 datasets was achieved, respectively.
+The proposed optimization methodology keeps the model
+architecture the same, i.e., the number of layers, the type of
+layers, and the connectivity between them. Therefore, in the
+future, we plan to modify the data-driven offline optimization
+methodology to explore the number, the type, and the con-
+nectivity of layers, i.e., a Neural Architecture Search (NAS)
+algorithm. Moreover, we plan to add hardware implemen-
+tation constraints in the proposed optimization algorithm,
+e.g., the Peak Memory Usage (PMU) at inference time, the
+model size, and the latency to permit the model deploy-
+ment on low-cost, battery-operated microcontrollers. Finally,
+except for extracting helpful information directly from the
+raw EEG/ECoG signals, there are CNN-based analysis tech-
+niques that first transform non-stationary signals (such as
+EEG/ECoG signals) to the frequency domain, and then CNNs
+extract relevant information from these frequency-domain
+representations. These kinds of transformations have been
+applied successfully in induction motor fault diagnosis [32],
+in the automatic detection of speech deficits in cochlear
+implant users [33], in phoneme class recognition to extract
+phone-attribute features [33] and in the classification of noisy
+non-stationary time-series signals for detecting gravitational-
+wave signals in intensive real-life [34]. Therefore, one
+35898
+VOLUME 11, 2023
+
+
+============================================================
+Page 12
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+direction is to first try these approaches in EEG/ECoG motor
+imagery decoding and optimize the DL models proposed in
+these works.
+REFERENCES
+[1] B. Medical, ‘‘Medical gallery of blausen medical 2014,’’ WikiJournal
+Med., vol. 1, no. 2, pp. 1–79, 2014.
+[2] M. S. Hossain, S. U. Amin, M. Alsulaiman, and G. Muhammad, ‘‘Applying
+deep learning for epilepsy seizure detection and brain mapping visualiza-
+tion,’’ ACM Trans. Multimedia Comput., Commun., Appl., vol. 15, no. 1s,
+pp. 1–17, Jan. 2019.
+[3] L. Ilias, D. Askounis, and J. Psarras, ‘‘Multimodal detection of epilepsy
+with deep neural networks,’’ Exp. Syst. Appl., vol. 213, Mar. 2023,
+Art. no. 119010.
+[4] E. P. Giri, M. I. Fanany, A. M. Arymurthy, and S. K. Wijaya, ‘‘Ischemic
+stroke identification based on EEG and EOG using ID convolutional neural
+network and batch normalization,’’ in Proc. Int. Conf. Adv. Comput. Sci. Inf.
+Syst. (ICACSIS), Oct. 2016, pp. 484–491.
+[5] E. Efe and S. Ozsen, ‘‘CoSleepNet: Automated sleep staging using a hybrid
+CNN-LSTM network on imbalanced EEG-EOG datasets,’’ Biomed. Signal
+Process. Control, vol. 80, Feb. 2023, Art. no. 104299.
+[6] J. Zhang, D. Liu, W. Chen, Z. Pei, and J. Wang, ‘‘Deep convolutional neural
+network for EEG-based motor decoding,’’ Micromachines, vol. 13, no. 9,
+p. 1485, Sep. 2022.
+[7] X. Lun, Z. Yu, T. Chen, F. Wang, and Y. Hou, ‘‘A simplified CNN clas-
+sification method for MI-EEG via the electrode pairs signals,’’ Frontiers
+Human Neurosci., vol. 14, p. 338, Sep. 2020.
+[8] C. Ieracitano, F. C. Morabito, A. Hussain, and N. Mammone, ‘‘A hybrid-
+domain deep learning-based BCI for discriminating hand motion plan-
+ning from EEG sources,’’ Int. J. Neural Syst., vol. 31, no. 9, Sep. 2021,
+Art. no. 2150038.
+[9] P.-J. Lin, T. Jia, C. Li, T. Li, C. Qian, Z. Li, Y. Pan, and L. Ji, ‘‘CNN-
+based prognosis of BCI rehabilitation using EEG from first session BCI
+training,’’ IEEE Trans. Neural Syst. Rehabil. Eng., vol. 29, pp. 1936–1943,
+2021.
+[10] M. Śliwowski, M. Martin, A. Souloumiac, P. Blanchart, and T. Aksenova,
+‘‘Decoding ECoG signal into 3D hand translation using deep learning,’’
+J. Neural Eng., vol. 19, no. 2, Apr. 2022, Art. no. 026023.
+[11] Z. Xie, O. Schwartz, and A. Prasad, ‘‘Decoding of finger trajectory from
+ECoG using deep learning,’’ J. Neural Eng., vol. 15, no. 3, Feb. 2018,
+Art. no. 036009.
+[12] V. Lomtev, A. Kovalev, and A. Timchenko, ‘‘FingerFlex: Inferring finger
+trajectories from ECoG signals,’’ 2022, arXiv:2211.01960.
+[13] K. Sergeev, A. Runnova, M. Zhuravlev, E. Sitnikova, E. Rutskova,
+K. Smirnov, A. Slepnev, and N. Semenova, ‘‘Simple method for detect-
+ing sleep episodes in rats ECoG using machine learning,’’ 2023,
+arXiv:2302.00933.
+[14] G. Pan, J.-J. Li, Y. Qi, H. Yu, J.-M. Zhu, X.-X. Zheng, Y.-M. Wang, and
+S.-M. Zhang, ‘‘Rapid decoding of hand gestures in electrocorticography
+using recurrent neural networks,’’ Frontiers Neurosci., vol. 12, p. 555,
+Aug. 2018.
+[15] J. Pradeepkumar, M. Anandakumar, V. Kugathasan, T. D. Lalitharatne,
+A. C. De Silva, and S. L. Kappel, ‘‘Decoding of hand gestures from
+electrocorticography with LSTM based deep neural network,’’ in Proc.
+43rd Annu. Int. Conf. IEEE Eng. Med. Biol. Soc. (EMBC), Nov. 2021,
+pp. 420–423.
+[16] M. Stuart, S. Lesaja, J. J. Shih, T. Schultz, M. Manic, and D. J. Krusienski,
+‘‘An interpretable deep learning model for speech activity detection using
+electrocorticographic signals,’’ IEEE Trans. Neural Syst. Rehabil. Eng.,
+vol. 30, pp. 2783–2792, 2022.
+[17] J. Fu and S. Levine, ‘‘Offline model-based optimization via normalized
+maximum likelihood estimation,’’ 2021, arXiv:2102.07970.
+[18] D. Brookes, H. Park, and J. Listgarten, ‘‘Conditioning by adaptive
+sampling for robust design,’’ in Proc. Int. Conf. Mach. Learn., 2019,
+pp. 773–782.
+[19] B. Trabucco, A. Kumar, X. Geng, and S. Levine, ‘‘Conservative objective
+models for effective offline model-based optimization,’’ in Proc. Int. Conf.
+Mach. Learn., 2021, pp. 10358–10368.
+[20] C. Brunner, R. Leeb, G. Müller-Putz, A. Schlögl, and G. Pfurtscheller,
+‘‘BCI competition 2008–graz data set A,’’ Inst. Knowl. Discovery Lab.
+Brain-Comput. Interfaces, Graz Univ. Technol., vol. 16, pp. 1–6, 2008.
+[21] G. Schalk, J. Kubánek, K. J. Miller, N. R. Anderson, E. C. Leuthardt,
+J. G. Ojemann, D. Limbrick, D. Moran, L. A. Gerhardt, and J. R. Wolpaw,
+‘‘Decoding two-dimensional movement trajectories using electrocortico-
+graphic signals in humans,’’ J. Neural Eng., vol. 4, no. 3, pp. 264–275,
+Sep. 2007.
+[22] R. T. Schirrmeister, J. T. Springenberg, L. D. J. Fiederer, M. Glasstetter,
+K. Eggensperger, M. Tangermann, F. Hutter, W. Burgard, and T. Ball,
+‘‘Deep learning with convolutional neural networks for EEG decod-
+ing and visualization,’’ Hum. Brain Mapping, vol. 38, pp. 5391–5420,
+Nov. 2017.
+[23] K. Keng Ang, Z. Yang Chin, H. Zhang, and C. Guan, ‘‘Filter bank com-
+mon spatial pattern (FBCSP) in brain-computer interface,’’ in Proc. IEEE
+Int. Joint Conf. Neural Netw. (IEEE World Congr. Comput. Intelligence),
+Jun. 2008, pp. 2390–2397.
+[24] I. J. Goodfellow, J. Shlens, and C. Szegedy, ‘‘Explaining and harnessing
+adversarial examples,’’ 2014, arXiv:1412.6572.
+[25] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, ‘‘Attention is all you need,’’ in Proc. Adv.
+Neural Inf. Process. Syst., vol. 30, 2017, pp. 1–11.
+[26] X.-S. Yang, Nature-Inspired Metaheuristic Algorithms. Luniver Press,
+2010.
+[27] X.-S. Yang and S. Deb, ‘‘Eagle strategy using lévy walk and firefly
+algorithms for stochastic optimization,’’ in Nature Inspired Cooperative
+Strategies for Optimization (NICSO 2010). Cham, Switzerland: Springer,
+pp. 101–111, 2010.
+[28] X.-S. Yang and A. Slowik, ‘‘Firefly algorithm,’’ in Swarm Intelligence
+Algorithms. Boca Raton, FL, USA: CRC Press, 2020, pp. 163–174.
+[29] B. Trabucco, X. Geng, A. Kumar, and S. Levine, ‘‘Design-bench: Bench-
+marks for data-driven offline model-based optimization,’’ in Proc. Int.
+Conf. Mach. Learn., 2022, pp. 21658–21676.
+[30] J. T. Wilson, R. Moriconi, F. Hutter, and M. P. Deisenroth, ‘‘The reparam-
+eterization trick for acquisition functions,’’ 2017, arXiv:1712.00424.
+[31] M. Balandat, B. Karrer, D. Jiang, S. Daulton, B. Letham, A. G. Wilson, and
+E. Bakshy, ‘‘BoTorch: A framework for efficient Monte-Carlo Bayesian
+optimization,’’ in Proc. Adv. Neural Inf. Process. Syst., vol. 33, 2020,
+pp. 21524–21538.
+[32] S. Shao, R. Yan, Y. Lu, P. Wang, and R. Gao, ‘‘DCNN-based multi-signal
+induction motor fault diagnosis,’’ IEEE Trans. Instrum. Meas., vol. 69,
+no. 6, pp. 2658–2669, Jun. 2020.
+[33] T.
+Arias-Vergara,
+P.
+Klumpp,
+J.
+C.
+Vasquez-Correa,
+E.
+Nöth,
+J. R. Orozco-Arroyave, and M. Schuster, ‘‘Multi-channel spectrograms
+for speech processing applications using deep learning methods,’’ Pattern
+Anal. Appl., vol. 24, no. 2, pp. 423–431, May 2021.
+[34] N. Lopac, F. Hrzic, I. P. Vuksanovic, and J. Lerga, ‘‘Detection
+of non-stationary GW signals in high noise from cohen’s class of
+time–frequency representations using deep learning,’’ IEEE Access,
+vol. 10, pp. 2408–2428, 2022.
+ANTONIOS TRAGOUDARAS (Student Member,
+IEEE) received the M.Eng. degree in electrical and
+computer engineering from the University of Thes-
+saly, Volos, Greece, in 2022. He is currently pur-
+suing the Ph.D. degree in electrical and computer
+engineering from the King Abdullah University of
+Science and Technology (KAUST), Saudi Arabia,
+affiliated with the Innovative Technologies Lab-
+oratories (ITL) Research Group. Before joining
+as a Ph.D. candidate, he was a Visiting Student
+with the ITL Group, for six months. His research interests include efficient
+deep-learning methods, decoding human brain activity, and the development
+of localization and mapping algorithms for autonomous robot navigation
+in indoor and outdoor environments. He is a recipient of the KAUST
+Fellowship.
+VOLUME 11, 2023
+35899
+
+
+============================================================
+Page 13
+============================================================
+A. Tragoudaras et al.: Enhancing DNN Models for EEG/ECoG BCI
+CHARALAMPOS
+ANTONIADIS
+(Member,
+IEEE) received the Diploma degree (Hons.) in
+computer and communication engineering, the
+M.S. degree in computer science, and the Ph.D.
+degree in electrical and computer engineering
+from the University of Thessaly, Volos, Greece,
+in 2011, 2014, and 2019, respectively. He is cur-
+rently a Postdoctoral Fellow affiliated with ITL,
+King Abdullah University of Science and Technol-
+ogy, Thuwal, Saudi Arabia. Before joining ITL,
+he spent one year as an Adjunct Lecturer with the University of Thessaly.
+His research interests include applied machine learning, the development
+of numerical methods in simulations, and algorithmic and system-level
+(both in hardware and software) optimizations. He was a recipient of the
+M.Sc. studies fellowships from the University of Thessaly and the Hellenic
+Foundation for Research and Innovation (HFRI) Fellowship for his Ph.D.
+studies. Also, he was a lead member of a team of students that obtained the
+First Place Award in the ACM TAU 2020 and TAU2 2021 Timing Analysis
+Contests.
+YEHIA MASSOUD (Fellow, IEEE) received the
+Ph.D. degree from the Massachusetts Institute of
+Technology, Cambridge, USA. He has held sev-
+eral academic and industrial positions, including a
+member of the Technical Staff with Synopsys Inc.,
+CA, USA; a tenured Faculty with the Department
+of Electrical and Computer Engineering and the
+Department of Computer Science, Rice University,
+Houston, USA; the Head of the Department of
+Electrical and Computer Engineering, Worcester
+Polytechnic Institute, USA; and the Dean of the School of Systems and Enter-
+prises, Stevens University of Science and Technology, USA. He is currently a
+Full Professor and the Director of the Innovative Technologies Laboratories
+(ITL), King Abdullah University of Science and Technology (KAUST),
+Saudi Arabia. He has authored more than 300 articles in peer-reviewed jour-
+nals and conferences. He was selected as one of ten MIT Alumni Featured by
+MIT’s Electrical Engineering and Computer Science Department, in 2012.
+He was a recipient of the Rising Star of Texas Medal, the National Science
+Foundation CAREER Award, the DAC Fellowship, the Synopsys Special
+Recognition Engineering Award, and two best paper awards. He has served
+as the Editor for Mixed-Signal Letters-the Americas and an Associate Editor
+for IEEE TRANSACTIONS ON VERY LARGE SCALE INTEGRATION (VLSI) SYSTEMS,
+the IEEE TRANSACTIONS ON CIRCUITS AND SYSTEMS—I: REGULAR PAPERS, and the
+Journal of Circuits, Systems, and Computers. He served as a Guest Co-Editor
+for the Special Issue of the IEEE TRANSACTIONS ON CIRCUITS AND SYSTEMS—I:
+REGULAR PAPERS, in 2010. He serves on the founding editorial board for the
+NanoCom journal.
+35900
+VOLUME 11, 2023
