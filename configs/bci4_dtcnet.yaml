@@ -1,10 +1,12 @@
-# DTCNet faithful reproduction config (Milestone 5.10)
+# DTCNet faithful reproduction config (Milestone 5.10) — v2 (decoder fix)
 #
 # Paper: Wang et al. 2025, Frontiers in Computational Neuroscience
 #
 # Architecture: Dilated-transposed CNN encoder-decoder, 6 encoder stages,
 #   sawtooth dilations (1,2,3,1,2), feature dims 64→64→128→256→512→512.
 #   Skip connections from encoder to decoder at each stage.
+#   Decoder ordering (Sec 2.3.4): cat(skip) → Conv → LN → GELU → Drop → ConvTranspose
+#   (v1 had wrong ordering: ConvTranspose → cat → Conv → LN → GELU → Drop)
 #
 # Input: full Morlet spectrogram (N_ch × 40_freqs × T) → flattened (N_ch*40, T)
 #   Paper treats this as "3D" structure; we use standard flatten for 1D CNN.
@@ -15,6 +17,9 @@
 # Loss: MSE + cosine similarity (mse_cosine, lambda=0.5)
 # Optimizer: Adam lr=8.42e-5, wd=1e-6, dropout=0.1
 # NOTE: paper uses same lr as our Transformer best — good sign.
+#
+# Notch: 60 Hz — paper Sec 2.2.2: "notch filter [...] 60 Hz power line frequency
+# and its harmonics" (US recording, BCI-IV is BCI2000 system).
 #
 # Target: mean=0.69 (S1=0.71, S2=0.59, S3=0.77), sigma=1
 
@@ -31,7 +36,7 @@ data:
 preprocessing_lomtev:
   bandpass_lo: 40.0
   bandpass_hi: 300.0
-  notch_freqs: [50]          # paper uses 60 Hz; we use 50 Hz (same as FingerFlex)
+  notch_freqs: [60]          # paper Sec 2.2.2: 60 Hz power line (US data)
   n_wavelets: 40             # full 40-freq Morlet spectrogram
   downsample_fs: 100
   time_delay_sec: 0.2
