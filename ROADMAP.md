@@ -838,7 +838,18 @@ Config: `configs/bci4_deepfingernet_fullspec.yaml`
 
 The dense skip connections of UNet++ do NOT compensate for the k=1 decoder weakness. NestedUNet as implemented is WORSE than our plain U-Net.
 
-**Verdict: ❌ DeepFingerNet NOT reproducible.** Their claimed mean=0.69 (S1=0.71, S2=0.59, S3=0.77) is not achievable with the architecture and training setup described in the paper. Our best result under either their setup or ours is mean=0.427 — a gap of 0.26. The architecture is also inferior to our existing U-Net (0.427 vs 0.597 mean). The paper likely overfits to validation, uses undisclosed hyperparameter search, or evaluates on a non-standard split.
+#### Attempt 3 (v2): Architecture Fix — Dropout + Pre-Norm Decoder — FAILED
+
+After re-examining the paper's Figure 2 block diagrams, we identified two bugs in our implementation: (1) missing Dropout layers in both encoder and decoder (clearly shown in the diagram), and (2) wrong decoder ordering — paper uses pre-norm (LN→GELU→Conv→Drop) while we had post-norm (Conv→LN→GELU). Fixed both in `nested_unet.py` and re-ran all configs.
+
+| Config | S1 | S2 | S3 | Mean | vs. prev |
+|--------|-----|-----|-----|------|----------|
+| v2 raw (n_wv=0, dropout+prenorm) | 0.188 | 0.264 | 0.404 | **0.285** | +0.033 |
+| v2 fullspec (n_wv=40, dropout+prenorm) | 0.342 | 0.351 | 0.547 | **0.413** | −0.014 |
+
+Dropout helped the raw config modestly but slightly hurt the fullspec config. The same overfitting pattern persists: val_r peaks at epoch 3–8 then declines under fixed lr=2e-5. The gap to the paper's 0.69 remains ~0.28–0.41.
+
+**Verdict: ❌ DeepFingerNet NOT reproducible after 4 attempts.** Their claimed mean=0.69 (S1=0.71, S2=0.59, S3=0.77) is not achievable with the architecture and training setup described in the paper. Our best result across all attempts is mean=0.427 — a gap of 0.26. The architecture is also inferior to our existing U-Net (0.427 vs 0.597 mean). The paper likely overfits to validation, uses undisclosed hyperparameter search, or evaluates on a non-standard split.
 
 **Implementation completed:**
 - [x] `src/models/nested_unet.py` — NestedUNet with dense skip connections
