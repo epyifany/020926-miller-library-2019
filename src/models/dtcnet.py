@@ -105,9 +105,10 @@ class _DecBlock(nn.Module):
                    if upsample else nn.Identity())
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
-        # Trim to match (ConvTranspose from initial_up may be ±1 off)
-        if x.shape[-1] != skip.shape[-1]:
-            x = x[..., :skip.shape[-1]]
+        # Trim to match (MaxPool rounding can cause ±1 mismatch)
+        min_t = min(x.shape[-1], skip.shape[-1])
+        x    = x[..., :min_t]
+        skip = skip[..., :min_t]
         x = torch.cat([x, skip], dim=1)          # cat with skip
         x = self.drop(F.gelu(self.ln(self.conv(x))))  # Conv → LN → GELU → Drop
         return self.up(x)                         # ConvTranspose (upsample)
@@ -176,7 +177,8 @@ class DTCNet(nn.Module):
         x5 = self.enc[4](x4)      # (B, 512, T//32)  — bottleneck
 
         # Decoder (paper ordering: cat → conv → ConvTranspose)
-        d = self.initial_up(x5)   # 512@T/32 → 512@T/16
+        d = self.initial_up(x5)            # 512@T/32 → 512@T/16
+        d = d[..., :x4.shape[-1]]          # trim ±1 from MaxPool rounding
         d = self.dec[0](d, x4)    # cat(512+512)@T/16 → 256, up → T/8
         d = self.dec[1](d, x3)    # cat(256+256)@T/8  → 128, up → T/4
         d = self.dec[2](d, x2)    # cat(128+128)@T/4  → 64,  up → T/2

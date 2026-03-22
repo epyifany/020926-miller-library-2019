@@ -52,6 +52,7 @@ split:
 model:
   name: dtcnet
   dropout: 0.1
+  strides: [2, 2, 2, 2, 2]    # 5 MaxPool(2) stages → total_stride=32 for T alignment
 
 training:
   batch_size: 128
