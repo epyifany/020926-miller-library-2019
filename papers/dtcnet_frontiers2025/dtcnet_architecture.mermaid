@@ -1,0 +1,145 @@
+graph TD
+    %% ───────────── INPUT ─────────────
+    INPUT["🧠 Raw ECoG Signal<br/><b>(electrode_channel, time)</b><br/>1000 Hz, 62–64 channels"]
+
+    %% ───────────── PREPROCESSING ─────────────
+    subgraph PREPROCESS["📊 Preprocessing Pipeline"]
+        direction TB
+        NORM["<b>Normalization</b><br/>Z-score per channel +<br/>median removal"]
+        FILT["<b>Filtering</b><br/>Bandpass 40–300 Hz<br/>Notch 60 Hz + harmonics"]
+        WAVELET["<b>Morlet Wavelet Transform</b><br/>Log-spaced freqs 40–300 Hz<br/>ψ_f(t) = A·e^(-t²/2σ²)·e^(2πift)<br/>Output: <b>(c, f, t)</b>"]
+        DOWNSAMPLE["<b>Downsample</b><br/>1000 Hz → 100 Hz"]
+        SLIDE["<b>Sliding Window</b><br/>window=256, stride=1<br/>Output: <b>(c, f, 256)</b>"]
+        FINGER_INTERP["<b>Finger Flexion Interp</b><br/>Cubic interp 25→100 Hz<br/>Matched sliding window<br/>Output: <b>(5, 256)</b>"]
+
+        NORM --> FILT --> WAVELET --> DOWNSAMPLE --> SLIDE
+        DOWNSAMPLE --> FINGER_INTERP
+    end
+
+    INPUT --> PREPROCESS
+
+    %% ───────────── FEATURE REDUCTION (Fig. 3 top) ─────────────
+    subgraph FEATRED["🔽 Feature Reduction"]
+        direction TB
+        FR_3D["<b>3D Input</b><br/>(c, f, l)"]
+        FR_FLAT["<b>Flatten</b><br/>(c, f, l) → (batch, c×f, l)"]
+        FR_FEAT["<b>feature tensor</b><br/>(feature, l)<br/>feature = c × f"]
+        FR_CONV["<b>Conv Block</b><br/>kernel=3, standard conv<br/>c×f → 64 ch | time preserved"]
+        FR_OUT["<b>Reduced tensor</b><br/>(64, l)"]
+        FR_3D --> FR_FLAT --> FR_FEAT --> FR_CONV --> FR_OUT
+    end
+
+    SLIDE --> FEATRED
+
+    %% ───────────── BLOCK DEFINITIONS (Fig. 4 center) ─────────────
+    subgraph LEGEND["Block Definitions"]
+        direction LR
+
+        subgraph CONV_BLOCK_DEF["Conv Block — Encoder"]
+            direction TB
+            CB_C["Conv1d (dilated)"]
+            CB_LN["LayerNorm"]
+            CB_G["GELU"]
+            CB_D["Dropout (0.1)"]
+            CB_MP["MaxPool1d (↓2× time)"]
+            CB_C --> CB_LN --> CB_G --> CB_D --> CB_MP
+        end
+
+        subgraph UPCONV_BLOCK_DEF["UpConv Block — Decoder"]
+            direction TB
+            UC_C["Conv1d (standard)"]
+            UC_LN["LayerNorm"]
+            UC_G["GELU"]
+            UC_D["Dropout (0.1)"]
+            UC_MP["MaxPool1d"]
+            UC_CT["ConvTranspose1d (↑ time)"]
+            UC_C --> UC_LN --> UC_G --> UC_D --> UC_MP --> UC_CT
+        end
+    end
+
+    %% ───────────── ENCODER (Fig. 4 left) ─────────────
+    subgraph ENCODER["⬇️ Encoder — 5 Conv Blocks"]
+        direction TB
+
+        E1["<b>Conv Block 1</b><br/>Conv1d k=7 d=1<br/>64→64 ch | 256→128 t"]
+        E2["<b>Conv Block 2</b><br/>Conv1d k=7 d=2<br/>64→128 ch | 128→64 t"]
+        E3["<b>Conv Block 3</b><br/>Conv1d k=5 d=3<br/>128→256 ch | 64→32 t"]
+        E4["<b>Conv Block 4</b><br/>Conv1d k=5 d=1<br/>256→512 ch | 32→16 t"]
+        E5["<b>Conv Block 5</b><br/>Conv1d k=5 d=2<br/>512→512 ch | 16→8 t"]
+
+        E1 --> E2 --> E3 --> E4 --> E5
+    end
+
+    FEATRED --> ENCODER
+
+    %% ───────────── BOTTLENECK ─────────────
+    BOTTLENECK["<b>Bottleneck</b><br/>512 ch × 8 t<br/>(E5 output — feeds directly to decoder)"]
+    E5 --> BOTTLENECK
+
+    %% ───────────── DECODER (Fig. 4 right) ─────────────
+    subgraph DECODER["⬆️ Decoder — 5 UpConv Blocks"]
+        direction TB
+
+        D5["<b>UpConv Block 5 (bottom)</b><br/>Skip from E4: 512+512 ch @ 16t<br/>Conv1d → LN → GELU → Drop<br/>→ MaxPool1d → ConvTranspose1d<br/>→ 256 ch × 32 t"]
+
+        D4["<b>UpConv Block 4</b><br/>Skip from E3: 256+256 ch @ 32t<br/>Conv1d → LN → GELU → Drop<br/>→ MaxPool1d → ConvTranspose1d<br/>→ 128 ch × 64 t"]
+
+        D3["<b>UpConv Block 3</b><br/>Skip from E2: 128+128 ch @ 64t<br/>Conv1d → LN → GELU → Drop<br/>→ MaxPool1d → ConvTranspose1d<br/>→ 64 ch × 128 t"]
+
+        D2["<b>UpConv Block 2</b><br/>Skip from E1: 64+64 ch @ 128t<br/>Conv1d → LN → GELU → Drop<br/>→ MaxPool1d → ConvTranspose1d<br/>→ 64 ch × 256 t"]
+
+        D1["<b>UpConv Block 1 (top)</b><br/>Skip from FR: 64+64 ch @ 256t<br/>Conv1d → LN → GELU → Drop<br/>→ MaxPool1d → ConvTranspose1d<br/>→ 64 ch × 256 t"]
+
+        D5 --> D4 --> D3 --> D2 --> D1
+    end
+
+    BOTTLENECK --> DECODER
+
+    %% ───────────── SKIP CONNECTIONS (5 total) ─────────────
+    FR_OUT -. "skip 1: 64 ch × 256 t" .-> D1
+    E1 -. "skip 2: 64 ch × 128 t" .-> D2
+    E2 -. "skip 3: 128 ch × 64 t" .-> D3
+    E3 -. "skip 4: 256 ch × 32 t" .-> D4
+    E4 -. "skip 5: 512 ch × 16 t" .-> D5
+
+    %% ───────────── FINAL OUTPUT (Fig. 3 bottom) ─────────────
+    subgraph FINAL["📤 Final Output"]
+        direction TB
+        DEC_FEAT["<b>Decoded feature map</b><br/>(feature, l) = (64, 256)<br/>Reconstructed features with<br/>integrated skip information"]
+        CONV_1x1["<b>1×1 Conv</b><br/>64 → 5 channels<br/>Per-timestep weighted sum"]
+        FINGER_OUT["📏 <b>Finger Flexion Predictions</b><br/>(batch, 5, 256)<br/>Thumb · Index · Middle · Ring · Little"]
+        DEC_FEAT --> CONV_1x1 --> FINGER_OUT
+    end
+
+    DECODER --> FINAL
+
+    %% ───────────── TRAINING ─────────────
+    subgraph TRAINING["⚙️ Training Configuration"]
+        direction LR
+        OPT["Adam optimizer<br/>lr = 8.42e-5<br/>weight decay = 1e-6"]
+        LOSS["Loss = MSE + Cosine Similarity"]
+        METRIC["Eval: Pearson Correlation<br/>Avg r = 0.69 across subjects"]
+        OPT --- LOSS --- METRIC
+    end
+
+    %% ───────────── STYLING ─────────────
+    classDef input fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef preprocess fill:#FFF3E0,stroke:#E65100,stroke-width:1px,color:#BF360C
+    classDef featred fill:#F3E5F5,stroke:#6A1B9A,stroke-width:1px,color:#4A148C
+    classDef encoder fill:#E8F5E9,stroke:#2E7D32,stroke-width:1px,color:#1B5E20
+    classDef bottleneck fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    classDef decoder fill:#FFF8E1,stroke:#F57F17,stroke-width:1px,color:#E65100
+    classDef output fill:#E1F5FE,stroke:#0277BD,stroke-width:2px,color:#01579B
+    classDef finalout fill:#FFCDD2,stroke:#C62828,stroke-width:1px,color:#B71C1C
+    classDef training fill:#F5F5F5,stroke:#616161,stroke-width:1px,color:#212121
+    classDef legend fill:#FAFAFA,stroke:#9E9E9E,stroke-width:1px,color:#424242
+
+    class INPUT input
+    class NORM,FILT,WAVELET,DOWNSAMPLE,SLIDE,FINGER_INTERP preprocess
+    class FR_3D,FR_FLAT,FR_FEAT,FR_CONV,FR_OUT featred
+    class E1,E2,E3,E4,E5 encoder
+    class BOTTLENECK bottleneck
+    class D5,D4,D3,D2,D1 decoder
+    class DEC_FEAT,CONV_1x1,FINGER_OUT output
+    class OPT,LOSS,METRIC training
+    class CB_C,CB_LN,CB_G,CB_D,CB_MP,UC_C,UC_LN,UC_G,UC_D,UC_MP,UC_CT legend
