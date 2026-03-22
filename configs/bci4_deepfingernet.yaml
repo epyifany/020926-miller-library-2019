@@ -48,6 +48,7 @@ model:
   n_channels_out: 5
   base_ch: 32
   kernel_size: 3
+  dropout: 0.1           # paper Fig. 2 shows Drop layers in encoder + decoder
 
 training:
   batch_size: 128

@@ -99,6 +99,7 @@ def _build_nested_unet(model_cfg, n_channels, n_input_features, n_targets):
         n_channels_out=n_targets,
         base_ch=model_cfg.get("base_ch", 32),
         kernel_size=model_cfg.get("kernel_size", 3),
+        dropout=model_cfg.get("dropout", 0.1),
     )
 
 
