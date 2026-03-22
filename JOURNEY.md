@@ -291,7 +291,18 @@ python scripts/train.py --config configs/bci4_deepfingernet_fullspec.yaml --subj
 2. k=1 decoder convolutions → no temporal receptive field in reconstruction path
 3. Our U-Net (same preprocessing) gets 0.575 vs NestedUNet's best 0.427
 
-**Verdict**: DeepFingerNet NOT reproducible. The claimed 0.69 is not achievable with the described setup. Architecture is also inferior to our plain U-Net.
+#### Attempt 3 (v2): Architecture Fix — Dropout + Pre-Norm Decoder — FAILED
+
+Re-examined Fig. 2 block diagrams and found two bugs: (1) missing Dropout layers in encoder and decoder, and (2) wrong decoder ordering — paper uses pre-norm (LN→GELU→Conv→Drop), not post-norm. Fixed both in `nested_unet.py` and re-ran.
+
+| Config | S1 | S2 | S3 | Mean |
+|--------|-----|-----|-----|------|
+| v2 raw (n_wv=0, dropout+prenorm) | 0.188 | 0.264 | 0.404 | **0.285** |
+| v2 fullspec (n_wv=40, dropout+prenorm) | 0.342 | 0.351 | 0.547 | **0.413** |
+
+Dropout helped the raw config slightly but hurt the fullspec config. The same overfitting pattern persists under fixed lr=2e-5 regardless of architecture fixes.
+
+**Verdict**: ❌ DeepFingerNet NOT reproducible after 4 attempts. Best result across all attempts: mean=0.427 (gap of 0.26 vs claimed 0.69). Architecture is inferior to our plain U-Net (0.427 vs 0.597). The paper likely reports validation-set performance with undisclosed hyperparameter search — their claimed 0.69 is comparable to our U-Net's val_r=0.685 on the same preprocessing, not a genuine improvement.
 
 ### Milestone 5.10 — DTCNet Reproduction (IN PROGRESS)
 **Goal**: Reproduce DTCNet's mean=0.69 (S1=0.71, S2=0.59, S3=0.77).
