@@ -4,6 +4,7 @@ Handles training loop, evaluation (windowed + full-signal), checkpointing,
 and logging. Does NOT own W&B init/finish — the script handles that.
 """
 
+import csv
 import json
 import os
 import time
@@ -110,6 +111,62 @@ class Trainer:
         self.smooth_sigma_val = eval_cfg.get("smooth_sigma_val", 0)
         self.smooth_sigma_test = eval_cfg.get("smooth_sigma_test", 0)
 
+        # Data augmentation (GPU-side, training only)
+        aug_cfg = config.get("augmentation", {})
+        self.noise_sigma = aug_cfg.get("gaussian_noise_sigma", 0.0)
+        self.amp_scale_range = aug_cfg.get("amplitude_scale_range", None)
+        # SpecAugment: time and frequency masking (for 4D spectrogram inputs)
+        self.time_mask_param = aug_cfg.get("time_mask_param", 0)
+        self.freq_mask_param = aug_cfg.get("freq_mask_param", 0)
+        self.n_time_masks = aug_cfg.get("n_time_masks", 1)
+        self.n_freq_masks = aug_cfg.get("n_freq_masks", 1)
+        self.spec_augment = self.time_mask_param > 0 or self.freq_mask_param > 0
+        self.augment = (self.noise_sigma > 0 or self.amp_scale_range is not None
+                        or self.spec_augment)
+
+        # Per-epoch CSV logger
+        self._csv_path = os.path.join(exp_dir, "metrics.csv")
+        self._csv_header_written = False
+
+    def _augment_batch(self, x):
+        """Apply data augmentation to input batch (GPU-side, in-place)."""
+        if self.noise_sigma > 0:
+            x = x + torch.randn_like(x) * self.noise_sigma
+        if self.amp_scale_range is not None:
+            lo, hi = self.amp_scale_range
+            # Per-channel scaling: shape (B, C, 1, 1) for 4D or (B, C, 1) for 3D
+            shape = [x.size(0), x.size(1)] + [1] * (x.ndim - 2)
+            scale = torch.empty(shape, device=x.device).uniform_(lo, hi)
+            x = x * scale
+        if self.spec_augment and x.ndim == 4:
+            x = self._spec_augment(x)
+        return x
+
+    def _spec_augment(self, x):
+        """SpecAugment: time and frequency masking on 4D spectrograms.
+
+        x: (B, C, W, T) where W = n_freq_bins, T = n_timesteps.
+        Masks are applied per-sample (different random masks per batch element).
+        """
+        B, C, W, T = x.shape
+        # Frequency masking: zero out contiguous frequency bands
+        if self.freq_mask_param > 0:
+            for _ in range(self.n_freq_masks):
+                f = torch.randint(0, self.freq_mask_param + 1, (B,))
+                f0 = torch.stack([torch.randint(0, max(W - f[i], 1), (1,)).squeeze()
+                                  for i in range(B)])
+                for i in range(B):
+                    x[i, :, f0[i]:f0[i] + f[i], :] = 0
+        # Time masking: zero out contiguous time segments
+        if self.time_mask_param > 0:
+            for _ in range(self.n_time_masks):
+                t = torch.randint(0, self.time_mask_param + 1, (B,))
+                t0 = torch.stack([torch.randint(0, max(T - t[i], 1), (1,)).squeeze()
+                                  for i in range(B)])
+                for i in range(B):
+                    x[i, :, :, t0[i]:t0[i] + t[i]] = 0
+        return x
+
     def train_one_epoch(self):
         """Run one training epoch. Returns average loss."""
         self.model.train()
@@ -119,6 +176,9 @@ class Trainer:
         for x_batch, y_batch in self.train_loader:
             x_batch = x_batch.to(self.device)
             y_batch = y_batch.to(self.device)
+
+            if self.augment:
+                x_batch = self._augment_batch(x_batch)
 
             pred = self.model(x_batch)
             loss = self.loss_fn(pred, y_batch)
@@ -245,6 +305,25 @@ class Trainer:
             for i, r in enumerate(val_r):
                 epoch_metrics[f"val/r_ch_{i}"] = float(r)
             log_epoch(epoch_metrics, step=epoch)
+
+            # CSV logging
+            csv_row = {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "val_r_avg": float(r_avg),
+                "lr": lr,
+                "epoch_time": elapsed,
+            }
+            for i, r in enumerate(val_r):
+                csv_row[f"val_r_ch{i}"] = float(r)
+            if not self._csv_header_written:
+                self._csv_file = open(self._csv_path, "w", newline="")
+                self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=list(csv_row.keys()))
+                self._csv_writer.writeheader()
+                self._csv_header_written = True
+            self._csv_writer.writerow(csv_row)
+            self._csv_file.flush()
 
             # Save best model (select by max correlation)
             if r_avg > best_val_r:

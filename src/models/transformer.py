@@ -141,9 +141,11 @@ class TransformerECoG(nn.Module):
     def __init__(self, n_channels_in, n_channels_out, d_model=64,
                  n_layers=4, n_heads=4, dim_feedforward=256,
                  spatial_kernel_size=3, spatial_bottleneck_dim=0,
-                 ffn_type='gelu', dropout=0.1, eval_window=256):
+                 ffn_type='gelu', dropout=0.1, eval_window=256,
+                 channel_dropout_prob=0.0):
         super().__init__()
         self.eval_window = eval_window
+        self.channel_dropout_prob = channel_dropout_prob
 
         # Spatial reduction: flatten (ch * freq) → d_model
         # Optional 2-stage bottleneck: n_in → bottleneck → d_model
@@ -213,6 +215,12 @@ class TransformerECoG(nn.Module):
         # Handle 4D spectrogram input: (B, C, W, T) → (B, C*W, T)
         if x.ndim == 4:
             b, c, w, t = x.shape
+            # Channel dropout: zero entire electrodes (all wavelet features)
+            if self.training and self.channel_dropout_prob > 0:
+                mask = torch.bernoulli(
+                    torch.full((b, c, 1, 1), 1.0 - self.channel_dropout_prob, device=x.device)
+                )
+                x = x * mask / (1.0 - self.channel_dropout_prob)
             x = x.reshape(b, c * w, t)
 
         T = x.shape[-1]

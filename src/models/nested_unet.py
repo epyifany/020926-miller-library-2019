@@ -4,31 +4,23 @@ Reproduces DeepFingerNet (Tao et al., 2025, IEEE TIM).
 Architecture: 3 nested U-Nets with dense skip connections (UNet++ style).
 
 Encoder: Conv→LN→GELU→Dropout per level (k=3), channels [32, 64, 128, 256]
-Decoder: Pre-norm (LN→GELU→Conv→Drop→LN→GELU→Conv) per node, k=1 (pointwise)
+Decoder: Pre-norm (LN→GELU→Conv→Drop→LN→GELU→Conv) per node
 Upsampling: ConvTranspose1d (first/direct decoder path); Upsample (nested paths)
 
-This design gives ~320K parameters with N=62 input channels, matching the
-paper's reported 1.30 MB / ~325K params.
+v3 fixes (from re-reading paper Fig. 2):
+  - Decoder kernel_size configurable (default 3, was hardcoded 1 — k=1 gives
+    zero temporal receptive field in reconstruction path)
+  - Dense output: head receives cat(e0, d01, d02, d03) = 4×base_ch = 128ch,
+    matching the paper diagram's "128 → Output" (was 32 → Output)
 
 Input:  (batch, N, T)           — raw ECoG, N electrodes at 100 Hz
-        OR (batch, N, 1, T)     — 4-D pipeline format (n_wavelets=0 mode)
+        OR (batch, N, W, T)     — 4-D spectrogram (n_wavelets>0)
 Output: (batch, n_channels_out, T)
 
 Reference:
     Tao et al. "DeepFingerNet: A Nested U-Net for ECoG-based Finger Decoding"
     IEEE Transactions on Instrumentation and Measurement, 2025.
     DOI: 10.1109/TIM.2025.3644562
-
-Architecture notes (from paper Table I):
-  Decoder channel inputs:
-    Dec4 (X21): ct(256→128) + enc2(128) = 256  → 128   [direct, k=1]
-    Dec2 (X11): ct(128→64)  + enc1(64)  = 128  → 64    [direct, k=1]
-    Dec1 (X01): ct(64→32)   + enc0(32)  = 64   → 32    [direct, k=1]
-    Dec5 (X12): up(X21=128) + enc1(64) + X11(64) = 256 → 64   [nested, k=1]
-    Dec3 (X02): up(X11=64)  + enc0(32) + X01(32) = 128 → 32   [nested, k=1]
-    Dec6 (X03): up(X12=64)  + enc0(32) + X01(32) + X02(32) = 160 → 32 [nested]
-               (paper Table I lists 192 for Dec6; our formula gives 160 — 32ch gap
-               likely from an unrecoverable implementation detail in the figure)
 """
 
 import torch
@@ -65,23 +57,25 @@ class _EncoderBlock(nn.Module):
 # ── Decoder block: pre-norm (LN→GELU→Conv→Drop) × 2 (paper Fig. 2 decoder) ──
 
 class _DecoderBlock(nn.Module):
-    """Two pre-norm conv blocks: (LN → GELU → Conv1d(k=1) → Dropout) × 2.
+    """Two pre-norm conv blocks: (LN → GELU → Conv1d(k) → Dropout) × 2.
 
     Paper Fig. 2 decoder: LN→GELU→Conv1→Drop→LN→GELU→Conv2→Upsample.
     Upsample is handled externally; this block does the two conv sub-blocks.
     """
 
-    def __init__(self, in_ch, out_ch, dropout=0.1):
+    def __init__(self, in_ch, out_ch, dropout=0.1, kernel_size=3):
         super().__init__()
         # Sub-block 1: in_ch → out_ch
         self.ln1 = _LN(in_ch)
         self.act1 = nn.GELU()
-        self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=1, bias=True)
+        self.conv1 = nn.Conv1d(in_ch, out_ch, kernel_size=kernel_size,
+                               padding="same", bias=True)
         self.drop1 = nn.Dropout(dropout)
         # Sub-block 2: out_ch → out_ch
         self.ln2 = _LN(out_ch)
         self.act2 = nn.GELU()
-        self.conv2 = nn.Conv1d(out_ch, out_ch, kernel_size=1, bias=True)
+        self.conv2 = nn.Conv1d(out_ch, out_ch, kernel_size=kernel_size,
+                               padding="same", bias=True)
         self.drop2 = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -115,10 +109,14 @@ class NestedUNet(nn.Module):
         base_ch: int = 32,
         kernel_size: int = 3,
         dropout: float = 0.1,
+        decoder_kernel_size: int = 3,
+        dense_output: bool = True,
     ):
         super().__init__()
         C = [base_ch * (2**i) for i in range(4)]  # [32, 64, 128, 256]
         k = kernel_size  # encoder kernel size (k=3)
+        dk = decoder_kernel_size
+        self.dense_output = dense_output
 
         # ── Encoder: Conv→LN→GELU→Dropout per level ────────────────────────
         self.sr   = _EncoderBlock(n_channels_in, C[0], k, dropout)  # N → 32
@@ -129,28 +127,31 @@ class NestedUNet(nn.Module):
 
         # ── First (direct) decoder path: ConvTranspose + DecoderBlock ────────
         self.ct21  = nn.ConvTranspose1d(C[3], C[2], kernel_size=2, stride=2)
-        self.dec21 = _DecoderBlock(C[2] + C[2], C[2], dropout)   # 256 → 128
+        self.dec21 = _DecoderBlock(C[2] + C[2], C[2], dropout, dk)   # 256 → 128
 
         self.ct11  = nn.ConvTranspose1d(C[2], C[1], kernel_size=2, stride=2)
-        self.dec11 = _DecoderBlock(C[1] + C[1], C[1], dropout)   # 128 → 64
+        self.dec11 = _DecoderBlock(C[1] + C[1], C[1], dropout, dk)   # 128 → 64
 
         self.ct01  = nn.ConvTranspose1d(C[1], C[0], kernel_size=2, stride=2)
-        self.dec01 = _DecoderBlock(C[0] + C[0], C[0], dropout)   # 64  → 32
+        self.dec01 = _DecoderBlock(C[0] + C[0], C[0], dropout, dk)   # 64  → 32
 
         # ── Nested decoder paths: Upsample + DecoderBlock ────────────────────
         self.up = nn.Upsample(scale_factor=2, mode="linear", align_corners=False)
 
         # up(X21=128) + enc1(64) + X11(64) = 256  (Dec5)
-        self.dec12 = _DecoderBlock(C[2] + C[1] + C[1], C[1], dropout)   # 256 → 64
+        self.dec12 = _DecoderBlock(C[2] + C[1] + C[1], C[1], dropout, dk)   # 256 → 64
 
         # up(X11=64) + enc0(32) + X01(32) = 128  (Dec3)
-        self.dec02 = _DecoderBlock(C[1] + C[0] + C[0], C[0], dropout)   # 128 → 32
+        self.dec02 = _DecoderBlock(C[1] + C[0] + C[0], C[0], dropout, dk)   # 128 → 32
 
         # up(X12=64) + enc0(32) + X01(32) + X02(32) = 160  (Dec6; paper: 192)
-        self.dec03 = _DecoderBlock(C[1] + C[0] * 3, C[0], dropout)      # 160 → 32
+        self.dec03 = _DecoderBlock(C[1] + C[0] * 3, C[0], dropout, dk)      # 160 → 32
 
         # ── Output head ─────────────────────────────────────────────────────
-        self.head = nn.Conv1d(C[0], n_channels_out, kernel_size=1)
+        # Dense output: cat(e0, d01, d02, d03) = 4×base_ch = 128ch
+        # Matches paper diagram "128 → Output"
+        head_ch = C[0] * 4 if dense_output else C[0]
+        self.head = nn.Conv1d(head_ch, n_channels_out, kernel_size=1)
 
     @staticmethod
     def _match(x: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
@@ -184,4 +185,8 @@ class NestedUNet(nn.Module):
         d02 = self.dec02(torch.cat([self.up(d11), e0,  d01       ], dim=1))
         d03 = self.dec03(torch.cat([self.up(d12), e0,  d01,  d02 ], dim=1))
 
-        return self.head(d03)                    # (B, n_targets, T)
+        # Dense output: cat all level-0 features (paper: 32+32+32+32=128→Output)
+        if self.dense_output:
+            out = torch.cat([e0, d01, d02, d03], dim=1)  # (B, 128, T)
+            return self.head(out)
+        return self.head(d03)                    # (B, 32, T)
