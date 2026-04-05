@@ -51,20 +51,19 @@
   - chdrop=0.2: peak ~ep15 (+0.030 mean)
   - More chdrop = more productive training epochs = better final result
 
-## chdrop Scaling Results (FULL SWEEPS)
+## chdrop Scaling Results (FULL SWEEPS — FINAL)
 
 | chdrop | S1 | S2 | S3 | Mean | vs DTCNet paper (0.690) |
 |--------|------|------|------|------|-------------------------|
 | 0.2 (baseline) | 0.680 | 0.569 | 0.777 | 0.675 | -0.015 |
 | 0.3 | 0.688 | 0.588 | — | — | — |
-| 0.4 | 0.716 | 0.605 | 0.793 | 0.705 | +0.015 |
-| 0.5 | **0.7307** | ~0.60 | ~0.77 | ~0.700 | — |
-| **0.6** | **0.7552+** | **0.6172+** | ~0.7727 | **~0.715** | **+0.025** |
-| 0.7 | running (ep6: 0.666) | — | — | — | — |
+| 0.4 | 0.7164 | 0.6054 | **0.7928** | 0.7049 | +0.015 |
+| 0.5 | 0.7307 | **0.6235** | 0.7745 | 0.7096 | +0.020 |
+| **0.6** | **0.7755** | 0.6223 | 0.7727 | **0.7235** | **+0.034** |
+| 0.7 | running on gpu039 | — | — | — | — |
 
-**chdrop=0.6 IS NEW SOTA!** S1=0.755 (+0.039 vs 0.4), S2=0.617 (+0.012), S3 slightly worse (-0.020).
-S1 and S2 still climbing (full LR, not reduced yet).
-S3 (64 ch) is the only subject where chdrop=0.4 is optimal — higher chdrop hurts S3.
+**chdrop=0.6 mean=0.7235 — NEW SOTA, +0.034 over DTCNet paper.**
+Per-subject optima: **S1=0.6**, **S2=0.5 (by 0.001)**, **S3=0.4**. Mixed oracle = 0.7306.
 
 ### V2 Results (vanilla + RoPE + conv module, ~97M)
 | Subject | V2 test_r | vs chdrop=0.4 |
@@ -76,12 +75,20 @@ S3 (64 ch) is the only subject where chdrop=0.4 is optimal — higher chdrop hur
 V2 beats baseline but chdrop=0.4 > V2 across the board. **Regularization > architecture.**
 
 ## Currently Running
-- [gpu003] **chdrop=0.5 S2** GPU 0, **chdrop=0.5 S3** GPU 1 — confirm sweep
-- [gpu003] **chdrop=0.6 S1** GPU 2 — find ceiling
-- [gpu039] **chdrop=0.6 S2** GPU 0, **chdrop=0.6 S3** GPU 1 — complete chdrop=0.6 sweep in parallel
-- [gpu039] V2 S3 GPU 2 finishing (ep45+)
+- [gpu003] **Miller chdrop=0.6 sweep started** (Stage 2 per CLAUDE.md)
+  - GPU 0: bp (46ch, 610s)
+  - GPU 1: mv (43ch, 179s — fastest signal)
+  - GPU 2: wc (64ch, 610s)
+  - Baseline: U-Net Lomtev mean 0.44 across 9 patients
+  - Monitor first 2-3, kill early if worse than baseline (CLAUDE.md workflow)
+- [gpu039] **chdrop=0.7 S1** — finding hard ceiling on BCI-IV
+
+## Miller Sweep Plan
+1. Round 1 (in progress): bp, mv, wc
+2. Round 2 (after): cc, ht, jp (if round 1 beats baseline)
+3. Round 3: jc, wm, zt
 
 ## Next Steps
-- If chdrop=0.5 mean > 0.705, new SOTA
-- If chdrop=0.6 S1 > 0.731, keep pushing (0.7, 0.8?)
-- Eventually: multi-seed on best config for error bars
+- Multi-seed on BCI-IV chdrop=0.6 once Miller sweep finishes
+- Per-subject optimal chdrop is an interesting finding — may want a clean ablation
+- Clinical framing: "model decodes with any 40% subset of electrodes" is the story

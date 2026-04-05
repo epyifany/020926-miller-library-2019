@@ -25,7 +25,7 @@ windowing_lomtev:
   stride: 1
 
 split:
-  val_frac: 0.0   # fullsplit: val=test, matches BCI-IV protocol
+  val_frac: 0.15   # Miller uses temporal 70/15/15 split (val/test distinct)
 
 model:
   name: transformer

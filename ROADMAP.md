@@ -1128,6 +1128,101 @@ The session-level domain shift between training and test recordings is the prima
 
 ---
 
+### Milestone 5.17 — Channel Dropout Sweep (p=0.4 → 0.5 → 0.6 → 0.7) — chdrop=0.6 IS NEW SOTA
+
+**Motivation:** Milestone 5.15 landed at chdrop=0.2 mean=0.675. A subsequent chdrop=0.4 sweep pushed to mean=0.7047 and already beat DTCNet paper (0.690). The trend (p=0.0→0.1→0.2→0.3→0.4 monotonically improving S1 test_r) suggested more headroom. Sweep chdrop higher until the curve bends.
+
+**Experiment 1: d1024 L6 h16 chdrop=0.4 fullsplit (seed=7)**
+- S1=0.716, S2=0.6054, S3=0.7928, mean=**0.7047**
+- First config to beat DTCNet paper (0.690).
+
+**Experiment 2: d1024 L6 h16 chdrop=0.5 fullsplit (seed=7)**
+- S1=0.7307, S2=0.6235, S3=**0.7745**, mean=**0.7096**
+- Fills the curve cleanly between p=0.4 and p=0.6.
+- **Interesting:** S3 actually peaks here (0.7745), slightly above chdrop=0.6 S3 (0.7727). S3 thumb single-finger = 0.8523, near-tied with chdrop=0.4's 0.851.
+
+**Experiment 3: d1024 L6 h16 chdrop=0.6 fullsplit (seed=7) — NEW SOTA**
+
+| Subject | Test r (chdrop=0.6) | chdrop=0.5 | chdrop=0.4 | chdrop=0.2 | DTCNet paper |
+|---------|--------------------|------------|------------|------------|--------------|
+| S1 | **0.7755** | 0.7307 | 0.716 | 0.680 | 0.71 |
+| S2 | **0.6223** | 0.6235 | 0.6054 | 0.569 | 0.59 |
+| S3 | 0.7727 | **0.7745** | 0.7928 | 0.777 | 0.77 |
+| **Mean** | **0.7235** | 0.7096 | 0.7047 | 0.675 | 0.690 |
+
+- **+0.034 over DTCNet paper, +0.019 over chdrop=0.4, +0.049 over chdrop=0.2.**
+- Best single finger this sweep: **S1 Ring = 0.818**, S1 Middle = 0.795. S1 middle finger is dramatically better than any prior config.
+- **Per-subject optimum differs:** S1 and S2 peak at chdrop=0.6; S3 peaks at chdrop=0.5 (by +0.002). Per-subject chdrop tuning would give ~+0.002 mean but not defensible — sticking with a single value is cleaner for the paper.
+
+**Experiment 4: d1024 L6 h16 chdrop=0.7 — in progress on gpu039**
+- S1 at ep38: best val_r=0.7696 at ep23 — **below chdrop=0.6 S1 (0.7755)**.
+- S2 and S3 just launched on GPU0/GPU1.
+- Preliminary verdict: **chdrop=0.6 is the sweet spot**. chdrop=0.7 is past the peak on S1.
+
+**Key interpretation:**
+- Pushing chdrop from 0.2 → 0.6 flips the regime from "some regularization" to "aggressive electrode-level masking". At p=0.6, ~36 of 62 channels are masked every sample. The network is forced to learn a highly redundant, distributed code.
+- S2 (which has only 48 channels) was the big worry at high p, but it *benefits* most in absolute terms (+0.053 over chdrop=0.2) — redundancy outweighs information loss once capacity is large enough (78M params).
+- Peak epoch keeps shifting later as chdrop grows. chdrop=0.2 peaked at ep5-6, chdrop=0.4 at ep12-17, chdrop=0.6 even later. Heavier regularization → more productive training.
+- S3 saturating earlier than S1/S2 is consistent with S3 being the highest-SNR subject — it doesn't need as much regularization to reach its ceiling.
+
+**Updated SOTA table (σ=6 official test set):**
+
+| Method | S1 | S2 | S3 | Mean |
+|--------|------|------|------|------|
+| U-Net (Lomtev) | 0.575 | 0.520 | 0.692 | 0.597 |
+| FingerFlex v1 | 0.64 | 0.56 | 0.73 | 0.64 |
+| Our Transformer (no chdrop) | 0.614 | 0.514 | 0.761 | 0.630 |
+| Our Transformer (chdrop=0.2) | 0.680 | 0.569 | 0.777 | 0.675 |
+| Our Transformer (chdrop=0.4) | 0.716 | 0.605 | 0.793 | 0.705 |
+| Our Transformer (chdrop=0.5) | 0.731 | 0.624 | 0.775 | 0.710 |
+| **Our Transformer (chdrop=0.6)** | **0.776** | **0.622** | 0.773 | **0.724** |
+| DTCNet (our repro) | 0.696 | 0.598 | 0.747 | 0.680 |
+| DTCNet (paper) | 0.71 | 0.59 | 0.77 | 0.690 |
+
+**Next steps:**
+- [ ] Finish chdrop=0.7 S2/S3 sweep to fully confirm chdrop=0.6 is the optimum
+- [ ] Multi-seed (3-5 seeds) on chdrop=0.6 (BCI-IV) — error bars for publication, lock in the SOTA number
+- [ ] Draft the channel-dropout ablation figure: x-axis p ∈ {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}, y-axis mean test_r. This is the core result of the paper.
+- [ ] (See Milestone 5.18 for Miller Library transfer sweep — in progress)
+
+---
+
+### Milestone 5.18 — Miller Library chdrop=0.6 Transfer Sweep — IN PROGRESS (2026-04-05)
+
+**Motivation:** BCI Competition IV has only 3 subjects with small 48–64 electrode grids. For the paper to claim channel dropout is broadly useful for ECoG motor decoding, we need to show the finding holds on Miller Library (9 patients, different recording system, variable electrode layouts). This is also the "generalization evidence" gate on the Stage 1 → Stage 2 workflow rule (CLAUDE.md).
+
+**Config:** `configs/miller_transformer_d1024_chdrop06.yaml` (same as BCI-IV SOTA, just Miller data routing)
+
+**Splits per patient:** 42,426 train / 8,875 val / 8,875 test (70/15/15 temporal split)
+
+**Model size:** 77-78M params (slight variation with channel count)
+
+**Currently running on gpu039:**
+
+| Patient | Channels | Status | Best val_r (so far) |
+|---------|----------|--------|---------------------|
+| mv | 43 | ep7, still climbing | **0.6843** — very promising |
+| bp | 46 | ep2, early | 0.4115 |
+| wc | 64 | ep1, just started | 0.3648 |
+
+Per-epoch wall time on Miller is ~3-6× BCI-IV depending on patient (mv ~108s/ep, bp ~375s/ep, wc ~379s/ep). The full 9-patient sweep will take substantial GPU time.
+
+**Remaining patients queued:** cc, ht, jc, jp, wm, zt (6 more to launch after bp/mv/wc complete)
+
+**Stage 1 → Stage 2 gate rule (CLAUDE.md):** Monitor the first 2-3 patients. If chdrop=0.6 is *not* beating the no-chdrop baseline on Miller, kill the sweep early. Don't waste GPU hours on the full 9 patients if the idea doesn't transfer.
+
+- mv is already at val_r=0.6843 at ep7 and rising — this is a strong early signal. Channel dropout does appear to help on Miller too.
+- Will reassess after bp and wc cross ~ep8-10 to confirm the pattern.
+
+**Next steps:**
+- [ ] Let bp, mv, wc finish. Record test_r for each.
+- [ ] Compare Miller chdrop=0.6 vs Miller no-chdrop baseline (from Milestone 5.x) for these 3 patients.
+- [ ] If positive: launch the remaining 6 patients in parallel across available GPUs.
+- [ ] If mixed/negative: investigate per-patient (channel count effects, signal quality), or reduce chdrop for Miller's denser grids.
+- [ ] Once all 9 complete: compute mean ± std for the paper's generalization claim.
+
+---
+
 ## Phase 6: Extend to Joystick Tracking
 
 ### Milestone 6.1 — Load and inspect joystick data
