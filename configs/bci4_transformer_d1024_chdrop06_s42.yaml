@@ -1,20 +1,21 @@
-# Miller 2019 fingerflex transformer — winning BCI-IV config
-# d1024 L6 h16 ff4096 + chdrop=0.6 + drop=0.2, seed=7, fullsplit (val=test)
-# BCI-IV result: S1=0.776, S2=0.622, S3=0.773, mean=0.723 (beats DTCNet +0.034)
+# d1024 L6 h16 + chdrop=0.6 — pushing the ceiling
+# S1: 0.2=0.680 → 0.3=0.688 → 0.4=0.716 → 0.5=0.731. Still climbing.
+# At chdrop=0.6, only 40% of electrodes visible per sample.
 
-seed: 7
+seed: 42
 
 data:
-  task: fingerflex
-  patient: bp            # One of: bp, cc, ht, jc, jp, mv, wc, wm, zt
+  task: bci4
+  subject: 1
   data_dir: data/fingerflex
+  bci4_data_dir: data/bci4
   sr: 1000
   n_targets: 5
 
 preprocessing_lomtev:
   bandpass_lo: 40.0
   bandpass_hi: 300.0
-  notch_freqs: [60, 120, 180]   # 60 Hz + harmonics (US data)
+  notch_freqs: [60]
   n_wavelets: 40
   downsample_fs: 100
   time_delay_sec: 0.2
@@ -25,9 +26,7 @@ windowing_lomtev:
   stride: 1
 
 split:
-  train_frac: 0.85
-  val_frac: 0.15
-  test_frac: 0.0   # fullsplit: val=test (matches BCI-IV protocol)
+  val_frac: 0.0
 
 model:
   name: transformer
@@ -38,7 +37,6 @@ model:
   spatial_kernel_size: 1
   dropout: 0.2
   channel_dropout_prob: 0.6
-  strides: [1]
 
 training:
   batch_size: 64
@@ -60,5 +58,4 @@ evaluation:
 
 logging:
   use_wandb: false
-  wandb_project: plact-motor-decoding
-  tags: [miller, transformer, d1024, L6, h16, chdrop06, fullsplit]
+  tags: [bci4, transformer, d1024, L6, h16, chdrop06, fullsplit]

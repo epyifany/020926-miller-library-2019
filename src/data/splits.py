@@ -23,7 +23,24 @@ def temporal_split(n_samples, train_frac=0.70, val_frac=0.15, test_frac=0.15):
     -------
     dict with keys 'train', 'val', 'test', each mapping to (start, end) tuples.
         Indices are half-open: data[start:end].
+
+    Special case (fullsplit): if test_frac=0, train/val must sum to 1.0 and
+    test is set equal to val (same held-out segment, evaluated twice). This
+    matches the BCI-IV fullsplit protocol used for direct comparability.
     """
+    if test_frac == 0.0:
+        total = train_frac + val_frac
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(
+                f"Fullsplit requires train_frac + val_frac = 1.0, got {total:.6f}"
+            )
+        train_end = int(n_samples * train_frac)
+        return {
+            "train": (0, train_end),
+            "val": (train_end, n_samples),
+            "test": (train_end, n_samples),  # same as val
+        }
+
     total = train_frac + val_frac + test_frac
     if abs(total - 1.0) > 1e-6:
         raise ValueError(

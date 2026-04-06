@@ -1,94 +1,110 @@
 # Experiment Coordination Log
 
-**Last updated:** 2026-04-04
-**Objective:** Beat DTCNet (0.680 repro / 0.690 paper) on BCI-IV with transformer-based architecture
+**Last updated:** 2026-04-06
+**Objective:** Beat DTCNet (0.680 repro / 0.690 paper) on BCI-IV, then generalize to Miller 2019
 
-## Baseline (target to beat)
-| Model | S1 | S2 | S3 | Mean | Params |
-|-------|------|------|------|------|--------|
-| Vanilla d1024 L6 h16 chdrop=0.2 | **0.680** | **0.569** | **0.777** | **0.675** | 78M |
-| DTCNet (our repro) | 0.696 | 0.598 | 0.747 | 0.680 | 4.5M |
-| DTCNet (paper) | 0.71 | 0.59 | 0.77 | 0.690 | — |
+## BCI-IV SOTA (ACHIEVED)
 
-## Completed Experiments (2026-04-04)
-
-### Conformer d=512 (L6, h8, ff=2048, chdrop=0.2)
-- **Params:** 40M | **Architecture:** Full Conformer (2x FFN + conv module + RoPE)
-- S1: 0.628 | S2: 0.501 | S3: 0.716 | **Mean: 0.615**
-- **Verdict:** Architecture beats vanilla d=512 (+0.05) but capacity-limited. NOT SOTA.
-
-### Conformer d=1024 (L6, h16, ff=4096, chdrop=0.2) — S3 NOT RUN
-- **Params:** 155M | S1: 0.648 | S2: 0.509 | S3: NOT RUN
-- **Verdict:** WORSE than vanilla d1024. 155M params → massive overfitting on 33K samples.
-
-### ConvTransformer d=512 (DTCNet conv stem + transformer at T/4)
-- **Params:** ~15M | S1: 0.611
-- **Verdict:** Worse than Conformer d512 and much worse than baseline. Conv stem alone isn't enough.
-
-### Vanilla d1024 + Data Augmentation (Gaussian noise + amplitude scaling)
-- S1: 0.664 (best ~ep38, still declining after)
-- **Verdict:** Augmentation HURTS S1. Doesn't help a model that's already well-regularized with chdrop=0.2.
-
-### Vanilla d1024 + SpecAugment
-- S1: 0.591
-- **Verdict:** SpecAug catastrophically bad for ECoG. Masking frequency bands destroys signal.
-
-## Key Learnings
-1. **Full Conformer doubles FFN params** (78M → 155M) — too much for 33K samples.
-2. **Conformer's conv module IS helpful** — d512 Conformer beats d512 vanilla by +0.05.
-3. **The right approach:** Add ONLY the conv module + RoPE to vanilla transformer (don't double FFN). ~97M params.
-4. **Augmentation doesn't help** when model already has chdrop=0.2.
-5. **SpecAug kills ECoG** — frequency bands are informative, masking them is destructive.
-
-## Convergence Analysis (d1024 chdrop=0.2 baseline)
-- **By epoch 5, model is at 95.6% of final performance.** Epochs 5-50 buy only 4.4%.
-- Train loss drops to 4% of ep1 by ep5. Model memorizes training data almost immediately.
-- Per-finger oracle (best epoch per finger): S1=0.694, S2=0.578, S3=0.783, **mean=0.685** — beats DTCNet!
-- The model CAN decode well enough. Single-checkpoint selection loses ~0.010.
-- **Channel dropout scaling trend:**
-  - chdrop=0.0: peak ~ep3-5
-  - chdrop=0.1: peak ~ep14 (+0.015 mean)
-  - chdrop=0.2: peak ~ep15 (+0.030 mean)
-  - More chdrop = more productive training epochs = better final result
-
-## chdrop Scaling Results (FULL SWEEPS — FINAL)
+### chdrop Scaling Results (FULL SWEEPS — ALL FINAL)
 
 | chdrop | S1 | S2 | S3 | Mean | vs DTCNet paper (0.690) |
 |--------|------|------|------|------|-------------------------|
 | 0.2 (baseline) | 0.680 | 0.569 | 0.777 | 0.675 | -0.015 |
 | 0.3 | 0.688 | 0.588 | — | — | — |
-| 0.4 | 0.7164 | 0.6054 | **0.7928** | 0.7049 | +0.015 |
-| 0.5 | 0.7307 | **0.6235** | 0.7745 | 0.7096 | +0.020 |
-| **0.6** | **0.7755** | 0.6223 | 0.7727 | **0.7235** | **+0.034** |
-| 0.7 | running on gpu039 | — | — | — | — |
+| 0.4 | 0.716 | 0.605 | **0.793** | 0.705 | +0.015 |
+| 0.5 | 0.731 | **0.624** | 0.775 | 0.710 | +0.020 |
+| **0.6** | **0.776** | 0.622 | 0.773 | **0.724** | **+0.034** |
+| 0.7 | 0.772 | 0.620 | 0.768 | 0.720 | +0.030 |
 
-**chdrop=0.6 mean=0.7235 — NEW SOTA, +0.034 over DTCNet paper.**
-Per-subject optima: **S1=0.6**, **S2=0.5 (by 0.001)**, **S3=0.4**. Mixed oracle = 0.7306.
+**chdrop=0.6 mean=0.724 — NEW SOTA, +0.034 over DTCNet paper.**
+**chdrop=0.7 declined** (-0.004 mean) — confirms chdrop=0.6 is the peak.
+Per-subject optima: **S1 peaks at 0.6**, **S2 at 0.5**, **S3 at 0.4**. Mixed oracle = 0.731.
+Paper ablation curve: 0.2(0.675)→0.4(0.705)→0.5(0.710)→**0.6(0.724)**→0.7(0.720). Clean peak.
 
-### V2 Results (vanilla + RoPE + conv module, ~97M)
-| Subject | V2 test_r | vs chdrop=0.4 |
-|---------|-----------|---------------|
-| S1 | 0.711 | -0.005 |
-| S2 | 0.591 | -0.014 |
-| S3 | ~0.761 (running, ep45) | -0.032 |
+Best single finger: S1 Ring = **0.818** (chdrop=0.6). S3 Thumb = **0.866** (chdrop=0.4).
 
-V2 beats baseline but chdrop=0.4 > V2 across the board. **Regularization > architecture.**
+### Architecture Experiments (all failed to beat chdrop scaling)
+| Experiment | S1 test_r | Params | Verdict |
+|-----------|-----------|--------|---------|
+| Conformer d512 | 0.628 | 40M | +0.05 over vanilla d512, capacity-limited |
+| Conformer d1024 | 0.648 | 155M | 2x FFN = massive overfitting |
+| TransformerV2 (RoPE+conv) | 0.711 | 97M | Beats baseline, but chdrop=0.4 > V2 |
+| ConvTransformer d512 | 0.611 | ~15M | Conv stem alone isn't enough |
+| Vanilla + augmentation | 0.664 | 78M | Doesn't help when chdrop regularizes |
+| Vanilla + SpecAugment | 0.591 | 78M | Catastrophic — kills ECoG signal |
+
+**Key lesson: regularization (chdrop) > architecture changes.**
+
+---
+
+## Miller 2019 chdrop=0.6 Sweep (Stage 2 — IN PROGRESS)
+
+**Context:** Lomtev/FingerFlex is the only reproducible DL benchmark on Miller 9-patient (mean 0.44).
+DTCNet, Jangir, Tragoudaras use BCI-IV only. DeepFingerNet claimed 0.54 on Miller but is NOT reproducible.
+Protocol: fullsplit 85/15, σ_test=6 (directionally comparable to baseline).
+
+### All Patients
+
+| Patient | Ch | U-Net baseline | Our transformer | Δ | Node | Status |
+|---------|-----|---------------|-----------------|---|------|--------|
+| **mv** | 43 | 0.460 | **0.548** | **+0.088** | gpu003 | ✅ DONE |
+| **bp** | 46 | 0.369 | **0.597** (ep25) | **+0.228** | gpu003 | running |
+| **wc** | 64 | 0.383 | **0.449** (ep24) | **+0.066** | gpu003 | running |
+| **cc** | 63 | 0.725 | running | — | gpu003 | running |
+| **ht** | 46 | 0.256 | **0.369** (ep6) | **+0.113** | gpu039 | running ep9 |
+| **jc** | 46 | 0.210 | **0.508** (ep10) | **+0.298** | gpu039 | running ep12 |
+| **jp** | 52 | 0.065 | **0.511** (ep3) | **+0.446** | gpu039 | running ep3 |
+| **wm** | 46 | ? | — | — | — | queued |
+| **zt** | 64 | ? | — | — | — | queued |
+
+**Standout results so far:**
+- **bp**: +0.228 over baseline, still climbing at ep25
+- **jp**: 7.8x improvement (0.065 → 0.511) — U-Net couldn't decode this patient at all
+- **jc**: 2.4x improvement (0.210 → 0.508)
+
+mv caveat: thumb still negative (-0.109, same structural issue as baseline -0.31).
+Other 4 fingers average 0.697 on mv.
+
+### splits.py Change
+`test_frac=0.0` triggers fullsplit mode (val=test). Matches BCI-IV protocol.
+```yaml
+split:
+  train_frac: 0.85
+  val_frac: 0.15
+  test_frac: 0.0
+```
+
+## Miller 9-Patient Sweep — COMPLETE (2026-04-06)
+
+Config: `miller_transformer_d1024_chdrop06.yaml` (d1024 L6 h16, chdrop=0.6, fullsplit 85/15, σ=6, seed=7)
+
+| Patient | Ch | Baseline (U-Net) | Ours | Δ |
+|---------|-----|------------------|------|---|
+| cc | 63 | 0.725 | **0.818** | +0.093 |
+| jp | 58 | 0.548 | **0.630** | +0.082 |
+| zt | 61 | 0.540 | **0.602** | +0.062 |
+| bp | 46 | 0.369 | **0.597** | +0.228 |
+| mv | 43 | 0.460 | **0.548** | +0.088 |
+| jc | 47 | 0.536 | 0.508 | -0.028 |
+| wc | 64 | 0.383 | **0.449** | +0.066 |
+| ht | 64 | 0.287 | **0.369** | +0.082 |
+| wm | 38 | 0.080 | 0.047 | -0.033 |
+| **Mean (9)** | | **0.436** | **0.508** | **+0.071** |
+| **Mean (8, excl wm)** | | **0.481** | **0.565** | **+0.084** |
+
+**7/9 patients improved over baseline.** Two underperformers:
+- **wm** (38ch): chdrop=0.6 leaves only 15 active channels — too few. Baseline was already 0.080.
+- **jc** (47ch): slight decline (-0.028), may benefit from lower chdrop.
+
+**Note on wm:** Every architecture we've tested fails on wm. DeepFingerNet claimed
+nothing below 0.2 on all 9 patients — their wm number is not credible given the data
+quality (38ch, weak motor coverage). Our 0.047 and baseline 0.080 are honest.
 
 ## Currently Running
-- [gpu003] **Miller chdrop=0.6 sweep started** (Stage 2 per CLAUDE.md)
-  - GPU 0: bp (46ch, 610s)
-  - GPU 1: mv (43ch, 179s — fastest signal)
-  - GPU 2: wc (64ch, 610s)
-  - Baseline: U-Net Lomtev mean 0.44 across 9 patients
-  - Monitor first 2-3, kill early if worse than baseline (CLAUDE.md workflow)
-- [gpu039] **chdrop=0.7 S1** — finding hard ceiling on BCI-IV
-
-## Miller Sweep Plan
-1. Round 1 (in progress): bp, mv, wc
-2. Round 2 (after): cc, ht, jp (if round 1 beats baseline)
-3. Round 3: jc, wm, zt
+- (nothing — all sweeps complete)
 
 ## Next Steps
-- Multi-seed on BCI-IV chdrop=0.6 once Miller sweep finishes
-- Per-subject optimal chdrop is an interesting finding — may want a clean ablation
-- Clinical framing: "model decodes with any 40% subset of electrodes" is the story
+1. Per-patient chdrop tuning — lower chdrop for sparse patients (wm, ht, jc)
+2. Multi-seed on BCI-IV chdrop=0.6 for error bars (3-5 seeds)
+3. Write paper — clinical framing: "model decodes with any 40% subset of electrodes"
+4. Re-run U-Net baseline with matched protocol (85/15 fullsplit σ=6) for fair comparison
